@@ -1,0 +1,841 @@
+\documentclass[10pt]{article}
+
+\usepackage{tmlr}
+\input{math_commands.tex}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{url}
+\usepackage[hypertexnames=false]{hyperref}
+
+\title{Compute-Adaptive Risk Control: Distribution-Free Joint Guarantees for Early-Exit Networks}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+
+Early-exit (multi-exit) networks reduce inference cost by letting "easy" inputs leave at shallow exits, but the deployed exit policy is typically tuned heuristically on a validation set with \textbf{no formal guarantee} that the realized error stays below a target --- and we show this naive tuning silently violates the target at a rate far above any nominal level. We give a calibration procedure that selects exit confidence thresholds so the deployed cascade satisfies a user-specified risk constraint $R(\tau)\le\alpha$ with finite-sample, distribution-free validity. The efficiency claim is deliberately scoped: in a controlled early-exit simulation the certified chain costs $3.260$ versus $3.183$ for the invalid naive policy, while the CIFAR-100 cache study is a finite-pool diagnostic whose pre-registered targets are mostly infeasible and whose feasible-target cells are exploratory. We build on the Learn-then-Test (LTT) reduction of risk control to multiple hypothesis testing; we propose no new test, and are precise about scope. \emph{Validity} --- the deployed policy keeps true risk below the target --- is finite-sample, distribution-free, and training-conditional (it holds for the deployed $\hat\tau$, not merely on average over calibration draws). On top of validity we add: (i) a \textbf{cost characterization} of the fixed-sequence test on the compute-ordered chain of exit policies --- the certified policy is never unsafe and never undercuts the safe frontier, and under a monotone-risk condition its excess compute over the cheapest safe policy \emph{in the chain} is bounded by a boundary band of width $O(\sqrt{\ln(K/\delta)/n})$, so the $\ln K$ price of the search falls on \emph{efficiency}, never validity; (ii) a joint risk--compute variant that certifies a \emph{pre-committed} compute budget for settings (provisioning, latency SLAs) where the budget must be guaranteed before the test distribution is seen; and (iii) a \textbf{shift-robust certificate under estimated importance weights}, which we present as a conservative sufficient condition / sensitivity tool: sample splitting plus an $L^1$ weight-error budget $\eta$ keep validity for any deployment whose weight error is at most $\eta$, at a feasibility cost we characterize. We give explicit concentration p-values and prove every guarantee used. Empirically, we verify the $1-\delta$ guarantee and the naive-tuning failure in the controlled simulation (where ground-truth risk is available for violation counting). The CIFAR-100 branchy-CNN cache diagnostic uses held-out test-pool risk as the finite-pool proxy and shows safety/abstention under infeasible targets plus exploratory feasible-target behavior; the remaining ImageNet, language-cascade, tabular, and shift experiments are specified as protocol.
+
+\end{abstract}
+
+\section{Introduction}
+
+Adaptive-depth inference --- early-exit networks, cascades, and routers --- is now a standard tool for trading accuracy against latency and energy. A common deployment recipe trains a multi-exit model, then picks confidence thresholds on held-out data so that empirical accuracy and empirical compute look acceptable. This recipe has two well-known gaps. First, validation inspection is not a guarantee: the threshold is chosen by inspecting the same statistic it is supposed to control, so the realized test risk can exceed the target, and the failure rate is not quantified. Second, accuracy and compute are tuned jointly by hand, with no principled statement about \emph{both} quantities at once.
+
+This paper asks a narrow, testable question: \textbf{can we choose exit thresholds so that the deployed policy provably keeps a chosen risk below a target $\alpha$ with probability at least $1-\delta$, distribution-free and finite-sample, while spending as little compute as possible?} We answer yes by instantiating the Learn-then-Test (LTT) framework for the structure of exit policies, following \citet{angelopoulos2025learn}. The testing-to-risk-control reduction and the fixed-sequence/graphical tests for monotone hypotheses are LTT's. What this paper adds is (a) a \emph{cost characterization} of the fixed-sequence test on the compute-ordered chain --- it is safe by construction, and we bound how much compute the search costs relative to the cheapest safe policy in the chain; (b) a joint risk--compute certificate for pre-committed budgets; and (c) a shift-robust certificate that stays finite-sample valid under \emph{estimated} importance weights via sample splitting and an $L^1$ sensitivity budget.
+
+The central claim is a guarantee, not a state-of-the-art accuracy number, so the experiments are built to \emph{falsify} the guarantee if it is wrong --- by measuring violation frequency across many calibration/test splits --- and to quantify the compute paid for certification. In the controlled simulation, this price is near the invalid naive policy (chain cost $3.260$ versus $3.183$). In the CIFAR-100 cache diagnostic, the evidence is narrower: the pre-registered targets are mostly infeasible because the minimum full-pool chain risk is $0.3055$, and the feasible-target cells are exploratory. The practical takeaway is therefore precise: \textbf{confidence-threshold tuning by validation inspection does not control risk, while the proposed certificate controls risk when its calibration assumptions hold; the cost and feasibility must be reported for the chosen model and target.}
+
+\textbf{Scope of evidence.} To set expectations precisely: the guarantees in Sections~3--6 are \emph{proved} (Appendix A); the $1-\delta$ behavior and the naive-tuning failure are \emph{verified in a controlled simulation} with a reference implementation, where ground-truth risk is available for violation counting (Section~10.1); and one real-model cache diagnostic has been run on a branchy CIFAR-100 CNN (Section~10.2), using held-out test-pool risk as a finite-pool proxy rather than population truth. The ImageNet, language-cascade, tabular, and real shift studies remain planned. We are careful below not to state planned findings as established.
+
+Figure~\ref{fig:pipeline} summarizes the deployment logic before the formal notation. The model is fixed before calibration; CARC uses the calibration cache only to certify a pre-specified chain, while the naive branch inspects the same cache without a family-wise risk certificate.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/fig1_pipeline.pdf}
+\caption{\textbf{CARC calibration/deployment flow.} A fixed multi-exit model produces cached calibration scores, losses, and compute values. The user pre-commits $(\alpha,\delta)$ and a compute-ordered chain; LTT-style tests certify configurations from expensive to cheap; the deployed policy is the cheapest certified one, or the procedure reports infeasibility. The orange branch shows the naive validation-inspection baseline: it may be cheap, but it does not provide the family-wise certificate used for risk control.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{Contributions}
+
+The reduction "risk control = multiple testing" and the admissibility of fixed-sequence and graphical tests are due to LTT and the multiple-testing literature. On that basis:
+
+\begin{enumerate}
+\item \textbf{Formulation.} We cast exit-threshold selection for an $L$-exit network as risk control over a finite, \emph{compute-ordered} family of configurations, for any bounded loss $\ell_{\mathrm{loss}}\in[0,1]$ (0--1 error, selective risk, class-conditional false-negative rate). The relevant structural fact is that the deployment objective --- the cheapest safe policy --- and the compute order of the chain coincide, so LTT's fixed-sequence test applies with the order fixed \emph{a priori} rather than chosen post hoc.
+\item \textbf{Cost characterization of the chain test (Theorem 2).} Validity holds unconditionally and with no chain-length penalty (this is LTT/fixed-sequence). The new statement is two-sided: the certified policy is always safe and never undercuts the safe frontier, and under a monotone-risk condition it lands within a boundary band of the cheapest safe policy \emph{in the chain}, with excess compute bounded by the compute spanned by configurations whose true risk lies in $(\alpha-\Delta_n,\alpha]$, $\Delta_n=O(\sqrt{\ln(K/\delta)/n})$. The $\ln K$ cost of searching the chain thus falls on \emph{efficiency}, not validity.
+\item \textbf{Joint risk--compute control (Theorem 3).} We certify $R(\tau)\le\alpha$ and $C(\tau)\le B$ simultaneously with probability $\ge1-\delta$. This matters when the budget must be \emph{pre-committed} --- hardware provisioning, energy caps, latency SLAs --- and so cannot be checked against the test distribution after the fact (unlike realized compute, which is observable at deployment). The risk certificate is the essential one; the compute certificate is a convenience for pre-commitment, and we treat it as such.
+\item \textbf{Shift-robust certificate under estimated weights (Theorem 4) --- a conservative sufficient condition.} Risk control under covariate shift is usually stated with \emph{exact} importance weights. We give a finite-sample valid version under \emph{estimated} weights by splitting off the weight-fitting fold and testing against a deflated target $\alpha-\eta$, where $\eta$ bounds the $L^1$ weight error. We do \textbf{not} claim this is tight or broadly practical: it is a sufficient condition whose validity rests on an unverifiable budget $\eta$, and whose feasibility degrades as $\eta$ grows. Its honest reading is a sensitivity analysis --- "the target holds for any deployment whose weight error is at most $\eta$" --- and we position it alongside the sensitivity-analysis line in conformal prediction, not as new machinery.
+\item \textbf{Reference implementation and empirical checks.} A unit-tested implementation of all p-values, certification procedures, and selectors, with a controlled-simulation study (Section~10.1) verifying the $1-\delta$ guarantee, the naive-tuning failure, and the chain/Holm/Bonferroni cost ordering. The current real-model evidence is a CIFAR-100 branchy-CNN finite-pool cache diagnostic (Section~10.2); the remaining ImageNet, language-cascade, tabular, and real-shift studies are protocol, not evidence.
+\end{enumerate}
+
+\subsection{Relation to Learn-then-Test}
+
+\emph{Borrowed.} From LTT \citep{angelopoulos2025learn} and the multiple-testing literature \citep{holm1979simple,wiens2003fixed,bretz2008graphical}: the reduction of risk control to testing nulls $H_\tau:R(\tau)>\alpha$ with valid p-values; the admissibility of fixed-sequence and graphical FWER procedures for monotone/nested hypotheses; the Hoeffding--Bentkus and empirical-Bernstein p-values \citep{hoeffding1963probability,bentkus2004hoeffding,maurer2009empirical}; and the fact that any selection rule restricted to the certified set inherits validity.
+
+\emph{New.} The cost characterization of the chain test for exit policies (Theorem 2b); the joint risk--compute certificate for pre-committed budgets (Theorem 3); the estimated-weight shift sufficient condition (Theorem 4); a reference implementation with controlled-simulation and CIFAR-100 cache diagnostics of validity and naive-tuning failure, plus a specified protocol for the remaining real-data studies. The contribution is an early-exit threshold-selection analysis and implementation with provable guarantees plus one (conservative) shift result, not new testing machinery. For the assumption-free fallback we implement and evaluate \textbf{Holm's step-down} \citep{holm1979simple}; the general graphical family of \citet{bretz2008graphical} subsumes both the chain and Holm and can recycle significance along the compute order, but we do not separately implement or evaluate it.
+
+\section{Problem setup and notation}
+
+Let $(X,Y)\sim P$ with $X\in\mathcal X$, $Y\in\mathcal Y$. A multi-exit network has exits $\ell\in\{1,\dots,L\}$ ordered by depth. Exit $\ell$ produces a prediction $\hat y_\ell(x)$ and a scalar confidence $s_\ell(x)\in[0,1]$ (e.g., top softmax probability, or $1-$ entropy). Let $c_\ell\ge0$ be the cumulative compute (FLOPs, or wall-clock proxy) to \emph{reach and evaluate} exit $\ell$, with $c_1<c_2<\dots<c_L=:C_{\max}$.
+
+\textbf{Exit policy.} A configuration is a threshold vector $\tau=(\tau_1,\dots,\tau_{L-1})\in[0,1]^{L-1}$. On input $x$, the policy exits at
+
+\[
+E_\tau(x)=\min\big(\{\,\ell<L : s_\ell(x)\ge\tau_\ell\,\}\cup\{L\}\big),
+\]
+
+i.e., it stops at the first exit whose confidence clears its threshold, and otherwise runs to the final exit $L$. The deployed prediction is $\hat Y_\tau(x)=\hat y_{E_\tau(x)}(x)$.
+
+\textbf{Risk and compute functionals.} For a bounded loss $\ell_{\mathrm{loss}}:\mathcal Y\times\mathcal Y\to[0,1]$,
+
+\[
+R(\tau) \;=\; \mathbb E_{P}\!\big[\ell_{\mathrm{loss}}(\hat Y_\tau(X),Y)\big],
+\qquad
+C(\tau) \;=\; \mathbb E_{P}\!\big[c_{E_\tau(X)}\big].
+\]
+
+Examples of $\ell_{\mathrm{loss}}$: 0--1 error $\mathbf 1\{\hat Y_\tau\ne Y\}$; selective risk on accepted points; class-conditional false-negative rate (clip to $[0,1]$). All that the theory needs is boundedness.
+
+\textbf{Calibration data.} We observe $n$ i.i.d. draws $\mathcal D=\{(X_i,Y_i)\}_{i=1}^n\sim P$, disjoint from training. Define empirical estimates
+
+\[
+\hat R(\tau)=\frac1n\sum_{i=1}^n \ell_{\mathrm{loss}}(\hat Y_\tau(X_i),Y_i),
+\qquad
+\hat C(\tau)=\frac1n\sum_{i=1}^n c_{E_\tau(X_i)}.
+\]
+
+\textbf{Goal.} Given target risk $\alpha\in(0,1)$ and confidence level $\delta\in(0,1)$, return $\hat\tau$ (a measurable function of $\mathcal D$) such that
+
+\begin{equation}
+\Pr_{\mathcal D}\big(R(\hat\tau)\le\alpha\big)\;\ge\;1-\delta,
+\tag{P1}
+\end{equation}
+
+and, among configurations satisfying (P1), $\hat\tau$ has small compute $C(\hat\tau)$. A stronger \emph{dual} specification adds a budget $B$:
+
+\begin{equation}
+\Pr_{\mathcal D}\big(R(\hat\tau)\le\alpha \ \text{and}\ C(\hat\tau)\le B\big)\ge 1-\delta.
+\tag{P2}
+\end{equation}
+
+\textbf{Grid.} We work over a finite candidate set $\Lambda\subset[0,1]^{L-1}$ (e.g., a per-exit grid of $m$ thresholds, $|\Lambda|\le m^{L-1}$, or a scalar-parameterized chain; see Section~4). All probabilities below are over the draw of $\mathcal D$; $\hat\tau$ is data-dependent.
+
+\textbf{Nature of the guarantee.} (P1) is a \emph{training-conditional} (PAC-style) statement: with probability $\ge1-\delta$ over the calibration draw, the \emph{fixed, deployed} policy $\hat\tau$ has true risk $\le\alpha$ for all subsequent inputs. It is not a marginal-over-future-test-points guarantee that averages away calibration noise; it is the stronger object an operator wants, since $\hat\tau$ is frozen at deployment. The qualifier \emph{distribution-free} applies to \textbf{validity}: it holds for any $P$. It does \textbf{not} extend to the efficiency (cost-optimality) and shift results, which require, respectively, a monotonicity condition (Section~4.1) and a weight-error budget (Section~6.2); we flag this wherever it matters.
+
+\section{Risk control as multiple testing}
+
+We adapt Learn-then-Test (LTT) \citep{angelopoulos2025learn}. For each $\tau\in\Lambda$ define the null
+
+\[
+H_\tau:\quad R(\tau)>\alpha \quad(\text{``}\tau\text{ is unsafe''}).
+\]
+
+Rejecting $H_\tau$ certifies $\tau$ as safe. We need (a) a valid p-value $p_\tau$ for each $H_\tau$, and (b) a family-wise-error-controlling (FWER) procedure that maps $\{p_\tau\}$ to a certified set $\hat\Lambda\subseteq\Lambda$ with
+
+\begin{equation}
+\Pr\big(\exists\,\tau\in\hat\Lambda:\ R(\tau)>\alpha\big)\le\delta.
+\tag{1}
+\end{equation}
+
+Given (1), \emph{any} selection rule restricted to $\hat\Lambda$ inherits validity, because the bad event "we output an unsafe $\tau$" is contained in "$\hat\Lambda$ contains an unsafe $\tau$."
+
+\subsection{Valid p-values from concentration}
+
+Because $\ell_{\mathrm{loss}}\in[0,1]$ and the $n$ losses are i.i.d. given $\tau$, $\hat R(\tau)$ is a mean of bounded i.i.d. variables. The one-sided Hoeffding inequality \citep{hoeffding1963probability} gives, for the boundary mean $R(\tau)=\alpha$ and any observed $\hat R(\tau)\le\alpha$,
+
+\[
+\Pr_{R(\tau)=\alpha}\!\big(\hat R(\tau)\le \hat r\big)\;\le\;\exp\!\big(-2n(\alpha-\hat r)^2\big).
+\]
+
+Since under $H_\tau$ we have $R(\tau)\ge\alpha$ (taking the closure), the supremum of the left side over the null is attained at $R(\tau)=\alpha$. Hence
+
+\begin{equation}
+\boxed{\,p_\tau \;=\; \exp\!\big(-2n\,(\alpha-\hat R(\tau))_+^2\big)\,}
+\tag{2}
+\end{equation}
+
+is a valid (super-uniform under $H_\tau$) p-value, where $(z)_+=\max(z,0)$. Tighter choices---the \textbf{Hoeffding--Bentkus (HB)} p-value used in LTT \citep{angelopoulos2025learn,bentkus2004hoeffding}, or an empirical-Bernstein p-value \citep{maurer2009empirical} when the loss has small variance---slot in directly and improve power; we use (2) for exposition and HB in experiments.
+
+\subsection{Bonferroni LTT (assumption-free baseline)}
+
+Reject $H_\tau$ iff $p_\tau\le\delta/|\Lambda|$, giving $\hat\Lambda_{\mathrm{Bonf}}=\{\tau:p_\tau\le\delta/|\Lambda|\}$. Then output
+
+\[
+\hat\tau=\arg\min_{\tau\in\hat\Lambda_{\mathrm{Bonf}}}\hat C(\tau)
+\quad(\text{abstain to }\tau=\mathbf 1\ \text{i.e. always run to }L\ \text{if }\hat\Lambda_{\mathrm{Bonf}}=\varnothing).
+\]
+
+\textbf{Theorem 1 (Distribution-free risk validity).} \emph{For losses in $[0,1]$, i.i.d. calibration data, p-values (2), and the Bonferroni rule at level $\delta$, the output $\hat\tau$ satisfies (P1): $\Pr(R(\hat\tau)\le\alpha)\ge1-\delta$.}
+
+\emph{Proof.} By Bonferroni, $\Pr(\exists\tau\in\hat\Lambda_{\mathrm{Bonf}}:R(\tau)>\alpha)\le\sum_{\tau:R(\tau)>\alpha}\Pr(p_\tau\le\delta/|\Lambda|)\le |\{\tau:H_\tau\}|\cdot \delta/|\Lambda|\le\delta$, using super-uniformity of $p_\tau$ under $H_\tau$. On the complementary event every certified $\tau$ is safe; since $\hat\tau\in\hat\Lambda_{\mathrm{Bonf}}$ (or is the safe full-depth policy with $R=R(\mathbf 1)\le\alpha$ whenever $\alpha\ge R(\mathbf1)$; if $\alpha<R(\mathbf1)$ the task is infeasible and we report infeasibility), $R(\hat\tau)\le\alpha$. $\square$
+
+The defect of Bonferroni is the $\delta/|\Lambda|$ penalty: with a fine per-exit grid $|\Lambda|$ is large, the threshold is tiny, and the certified set is small and expensive. The next section avoids this penalty on the \emph{validity} side by testing a pre-ordered chain --- at the price of restricting the search to that chain, a trade-off we make explicit.
+
+\section{The compute-chain instantiation}
+
+Fixed-sequence testing is a standard FWER procedure, already named in LTT for monotone, pre-orderable hypotheses \citep{angelopoulos2025learn,wiens2003fixed}; this section does \textbf{not} propose it as new. What it contributes is that early-exit deployment supplies the pre-specified order without extra design, aligned with the deployment objective, plus a two-sided cost bound (Theorem 2b) on how close the resulting policy is to the cheapest safe policy in the chain.
+
+\subsection{The monotone structure of exit policies}
+
+Order configurations by \textbf{compute}. Consider a \emph{chain} of configurations $\tau^{(1)}\preceq\tau^{(2)}\preceq\dots\preceq\tau^{(K)}$ that is increasing in compute, i.e. $C(\tau^{(1)})\le\dots\le C(\tau^{(K)})$, with $\tau^{(K)}=\mathbf 1$ the always-run-to-$L$ policy. A natural and common construction is a \textbf{scalar-parameterized} family $\tau(t)=(t,\dots,t)$ for $t$ on a grid $0=t_1<\dots<t_K=1$: raising the global threshold $t$ makes every exit more conservative, pushing more inputs to deeper exits, which \emph{increases} compute monotonically (deterministically, since each input's exit index is nondecreasing in $t$). More refined chains (per-exit thresholds raised in a fixed schedule) are also admissible.
+
+\textbf{Assumption M (monotone risk along the chain).} $R(\tau^{(1)})\ge R(\tau^{(2)})\ge\dots\ge R(\tau^{(K)})$; equivalently, deeper-on-average policies have weakly lower risk.
+
+Assumption M says deeper exits are, on average, at least as accurate --- the premise that motivates deploying a deep model at all. Its empirical version (monotone $\hat R$ along the chain) is observable, and we report it; the assumption itself concerns the true $R$. Crucially, Assumption M is needed only for the \emph{efficiency} statement of Theorem 2(b), never for validity.
+
+\textbf{Within-chain scope.} A chain is a one-dimensional curve through the $(L{-}1)$-dimensional configuration space, and the scalar family $\tau(t)=(t,\dots,t)$ in particular is restrictive: per-exit thresholds can dominate a single shared threshold. Consequently "cheapest safe policy" in Theorem 2 means cheapest \emph{along the chosen chain}, not the global optimum over all of $[0,1]^{L-1}$. The chain is a deliberate design choice trading search breadth against the multiplicity penalty: a Holm step-down over the full grid recovers more configurations at a $\log|\Lambda|$ cost (Section~4.2, remark), and the more general graphical family is a possible extension. We report the chain and Holm variants and let the practitioner pick between those implemented procedures.
+
+\subsection{Certification along the chain}
+
+Apply LTT's fixed-sequence test to the compute chain, walking from most expensive to cheapest, $\tau^{(K)},\tau^{(K-1)},\dots$, and \textbf{stopping at the first configuration that fails to certify}. With the Hoeffding p-value (2), the certification test $p_{\tau^{(k)}}\le\delta$ is exactly
+
+\[
+\hat R(\tau^{(k)})\;\le\;\alpha-\epsilon_n(\delta),
+\qquad
+\epsilon_n(\delta):=\sqrt{\tfrac{\ln(1/\delta)}{2n}} .
+\]
+
+Let $k^\star$ be the cheapest index reached before stopping; output $\hat\tau=\tau^{(k^\star)}$. If even $\tau^{(K)}$ fails to certify, report the task infeasible at this $(\alpha,\delta,n)$ and deploy $\tau^{(K)}=\mathbf 1$.
+
+Define the cheapest truly-safe index $k_0:=\min\{k:R(\tau^{(k)})\le\alpha\}$.
+
+\textbf{Theorem 2 (validity and a two-sided cost bound).}
+
+\emph{(a) Validity (LTT/fixed-sequence; stated for completeness).} For p-values valid under each $H_{\tau^{(k)}}$ and the fixed-sequence rule at level $\delta$ on the pre-specified chain order, $\Pr(R(\hat\tau)\le\alpha)\ge1-\delta$, with no dependence on $K$.
+
+\emph{(b) Cost bound (our contribution).} On the validity event the output never undercuts the safe frontier: $C(\hat\tau)\ge\min_{k:R(\tau^{(k)})\le\alpha}C(\tau^{(k)})$, and under Assumption M this means $k^\star\ge k_0$. For the other direction, let
+
+\[
+\Delta_n:=\epsilon_n(\delta)+\epsilon_n(\delta/K)=O\!\Big(\sqrt{\tfrac{\ln(K/\delta)}{n}}\Big),
+\qquad
+k_1:=\min\{k:\ R(\tau^{(j)})\le\alpha-\Delta_n\ \text{for all}\ j\ge k\}.
+\]
+
+Then $\Pr(k^\star\le k_1)\ge1-\delta$. Combining, on an event of probability $\ge1-2\delta$,
+
+\[
+k_0\ \le\ k^\star\ \le\ k_1,
+\]
+
+so the excess compute of the certified policy over the cheapest safe policy in the chain is at most $C(\tau^{(k_1)})-C(\tau^{(k_0)})$ --- the compute spanned by configurations whose true risk lies in the boundary band $(\alpha-\Delta_n,\,\alpha]$. As $n\to\infty$, $\Delta_n\to0$ and $k_1\to k_0$.
+
+\emph{Proof.} (a) is the standard fixed-sequence guarantee: since the order is fixed in advance and we stop at the first non-rejection, an error (outputting an unsafe config) requires rejecting the first true null in the walk, which has probability $\le\delta$ by super-uniformity; this is independent of $K$.
+
+(b) \emph{Lower bound.} $\hat\tau$ is certified, hence safe on the validity event, so its compute is at least that of the cheapest safe configuration; under Assumption M the safe set is the suffix $\{k\ge k_0\}$ and compute is increasing in $k$, giving $k^\star\ge k_0$. \emph{Upper bound.} The walk reaches index $k_1$ iff every config in $\{k_1,\dots,K\}$ certifies, i.e. $\hat R(\tau^{(j)})\le\alpha-\epsilon_n(\delta)$ for all $j\ge k_1$. For any such $j$, $R(\tau^{(j)})\le\alpha-\Delta_n=\alpha-\epsilon_n(\delta)-\epsilon_n(\delta/K)$, so
+
+\[
+\Pr\big(\hat R(\tau^{(j)})>\alpha-\epsilon_n(\delta)\big)\le\Pr\big(\hat R(\tau^{(j)})-R(\tau^{(j)})>\epsilon_n(\delta/K)\big)\le e^{-2n\,\epsilon_n(\delta/K)^2}=\delta/K
+\]
+
+by the upper-tail Hoeffding inequality. A union bound over the at most $K$ such indices gives $\Pr(\exists j\ge k_1:\ \hat R(\tau^{(j)})>\alpha-\epsilon_n(\delta))\le\delta$, i.e. $\Pr(k^\star\le k_1)\ge1-\delta$. Intersecting with the validity event and a union bound yields the sandwich with probability $\ge1-2\delta$. $\square$
+
+The structure of the bound is the honest payoff: \textbf{validity carries no $K$-penalty} (part a), while the \textbf{price of searching a length-$K$ chain is an $O(\sqrt{\ln K/n})$ band on efficiency} (part b). This is why early stopping matters and why we do \emph{not} claim exact recovery of $k_0$: a safe configuration sitting within $\Delta_n$ of the boundary may fail to certify and halt the walk, returning a slightly more expensive policy --- but never an unsafe one. Versus Bonferroni over the same grid, the chain's per-test level is $\delta$ rather than $\delta/K$, which tightens $\epsilon_n(\delta)$ and shrinks the band; the gain is LTT's, realized here because the compute order supplies the chain for free.
+
+\textbf{How large is the chain-vs-Bonferroni gain, in practice?} Honestly, often small. The advantage enters only through the \emph{difference} between $\epsilon_n(\delta)$ and $\epsilon_n(\delta/K)$, i.e. $\sqrt{\ln(1/\delta)/2n}$ vs. $\sqrt{\ln(K/\delta)/2n}$, which is modest unless $K$ is large or $n$ small (in our controlled simulation, Section~10.1, the certified-compute gap between chain and Bonferroni is a few percent). The bound therefore supports a narrower interpretation: fixed-sequence testing removes the chain-length penalty from validity and can reduce the efficiency band relative to Bonferroni, but the realized compute premium over an invalid naive selector is empirical and must be reported for each model, target, and chain.
+
+Figure~\ref{fig:chain-band} visualizes the two-sided cost statement. The important point is not exact recovery of the cheapest safe index $k_0$, but the separation between validity and efficiency: validity prevents moving left of the safe frontier, while the finite-sample search price appears as a boundary band in compute.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=.92\linewidth]{figures/fig2_chain_band.pdf}
+\caption{\textbf{Schematic of the compute-chain cost bound.} This is an illustrative monotone-risk chain, not an experimental curve. The fixed-sequence test walks from expensive to cheap. On the validity event, the selected configuration does not undercut the cheapest safe in-chain policy $k_0$. Under Assumption M, the additional compute is bounded by the span between $k_0$ and $k_1$, where $k_1$ is determined by the boundary band $(\alpha-\Delta_n,\alpha]$.}
+\label{fig:chain-band}
+\end{figure}
+
+\begin{quote}
+\textbf{Remark (assumption-free fallback when Assumption M is doubtful).} When per-exit thresholds are tuned jointly, or the empirical-monotonicity diagnostic looks suspect, drop the chain for an FWER procedure that needs no ordering. We implement and evaluate \textbf{Holm's step-down} \citep{holm1979simple}, which is valid unconditionally, requires no monotonicity, and strictly dominates Bonferroni. The general \emph{graphical} family of \citet{bretz2008graphical} subsumes both the chain and Holm and can recycle significance along the compute partial order---reducing to the chain test under exact monotonicity at a $\log|\Lambda|$ band---but we do not implement or evaluate it here, and do not claim its specific behavior.
+\end{quote}
+
+\section{Joint risk--compute control}
+
+Problem (P2) additionally certifies a compute budget $B$. The motivation is pre-commitment: an operator who must provision hardware, cap energy, or sign a latency SLA needs the budget guaranteed \emph{before} the test distribution is seen, whereas realized compute can simply be measured afterward. So this is a convenience guarantee layered on the essential risk one, not a co-equal claim. Compute $c_{E_\tau(X)}\in[0,C_{\max}]$ is bounded, so $\hat C(\tau)$ concentrates by Hoeffding: for a single $\tau$, with probability $\ge1-\delta_C$,
+
+\[
+C(\tau)\;\le\;\hat C(\tau)+C_{\max}\sqrt{\tfrac{\ln(1/\delta_C)}{2n}}=:U_C(\tau;\delta_C).
+\]
+
+To hold uniformly over the data-dependent choice, take a union bound over the $K$ chain points (or $|\Lambda|$ grid points), replacing $\delta_C$ by the \emph{deterministic} $\delta_C/K$ (resp. $\delta_C/|\Lambda|$).
+
+\textbf{Algorithm (dual control).} Split $\delta=\delta_R+\delta_C$. (i) Certify risk: form $\hat\Lambda$ as in Section~3--Section~4 at level $\delta_R$. (ii) Restrict to budget-feasible configs using the \emph{uniform} compute bound: $\hat\Lambda_B=\{\tau\in\hat\Lambda: U_C(\tau;\delta_C/K)\le B\}$. (iii) Output $\hat\tau=\arg\min_{\tau\in\hat\Lambda_B}\hat C(\tau)$, or report infeasible if $\hat\Lambda_B=\varnothing$.
+
+\textbf{Theorem 3 (Joint guarantee).} \emph{With the split budget $\delta=\delta_R+\delta_C$ and the procedure above,}
+
+\[
+\Pr\big(R(\hat\tau)\le\alpha \ \text{and}\ C(\hat\tau)\le B\big)\ge1-\delta.
+\]
+
+\emph{Proof.} Let $\mathcal A=\{\forall\tau\in\hat\Lambda:R(\tau)\le\alpha\}$ and $\mathcal B=\{\forall\tau\in\Lambda:C(\tau)\le U_C(\tau;\delta_C/K)\}$ (the compute event ranges over the \emph{fixed} grid, with the deterministic correction $\delta_C/K$). By Section~3--Section~4, $\Pr(\mathcal A^c)\le\delta_R$; by Hoeffding and a union bound over the $K$ points, $\Pr(\mathcal B^c)\le\delta_C$. On $\mathcal A\cap\mathcal B$: $\hat\tau\in\hat\Lambda\Rightarrow R(\hat\tau)\le\alpha$, and $\hat\tau\in\hat\Lambda_B\Rightarrow C(\hat\tau)\le U_C(\hat\tau;\delta_C/K)\le B$. Union bound: $\Pr((\mathcal A\cap\mathcal B)^c)\le\delta_R+\delta_C=\delta$. $\square$
+
+A symmetric formulation --- \emph{minimize risk subject to a hard budget} --- swaps the roles, certifying a budget by inverting the compute bound and minimizing $\hat R$ over budget-feasible configs; both are special cases of certifying one functional and optimizing the other.
+
+\textbf{On the split $(\delta_R,\delta_C)$.} We do not present this as a contribution. Because $\delta_R,\delta_C$ enter only through $\sqrt{\ln(1/\cdot)}$, the split is a weak knob: moving mass between the two sides changes each slack only logarithmically. We default to $\delta_R=0.9\delta,\ \delta_C=0.1\delta$ --- favoring the risk side, which is the essential guarantee and whose extra power directly buys cheaper certified policies --- and verify in E5 that performance is flat across a broad central range. An operator who genuinely needs to optimize it faces a trivial one-dimensional search.
+
+\textbf{Looseness of the compute bound.} The range-$C_{\max}$ Hoeffding UCB $U_C$ is conservative, since per-input cost is far from uniform on $[0,C_{\max}]$; in our simulation the dual certificate is reported infeasible whenever the budget $B$ is set near the realized compute, even when a budget-respecting safe policy exists. An empirical-Bernstein compute bound (variance-adaptive, as in Section~6.1) tightens $U_C$ materially and is the recommended form in practice; we keep Hoeffding in the statement for transparency. This is a further reason we treat the compute certificate as secondary to the risk certificate.
+
+\section{Covariate-shift robustness}
+
+Suppose deployment is under $Q$ with $X\sim Q_X$, $Y\mid X$ unchanged, and likelihood ratio $w(x)=\mathrm dQ_X/\mathrm dP_X$. The target is $R_Q(\tau)=\mathbb E_Q[\ell_{\mathrm{loss}}]=\mathbb E_P[w(X)\,\ell_{\mathrm{loss}}]$. The exact-weight case (Section~6.1) is standard; Section~6.2 handles the realistic case where $w$ is estimated.
+
+\subsection{Exact weights (warm-up)}
+
+If $0\le w\le W$ is known exactly, then $w\,\ell_{\mathrm{loss}}\in[0,W]$ has mean $R_Q(\tau)$, and the Section~3.1 argument rescaled by range $W$ gives the valid p-value $p^{Q,\mathrm{exact}}_\tau=\exp(-\frac{2n}{W^2}(\alpha-\hat R_Q(\tau))_+^2)$ with $\hat R_Q(\tau)=\frac1n\sum_i w(X_i)\ell_i$. Theorems 1--2 then hold under $Q$. Two caveats matter in practice. (i) Hoeffding with range $W$ is \emph{loose} for importance weighting because it ignores that most weights are small; the empirical-Bernstein p-value, whose slack scales with the \emph{weighted variance} rather than the range, is materially tighter and is what we use in experiments. (ii) The often-quoted effective sample size $n_{\mathrm{eff}}\approx(\sum_i w_i)^2/\sum_i w_i^2$ describes the behavior of that variance-adaptive bound, \emph{not} of the range-$W$ Hoeffding bound above; we report $n_{\mathrm{eff}}$ only alongside the empirical-Bernstein certificate, to avoid conflating the two.
+
+\subsection{Estimated weights}
+
+Let weights be \textbf{estimated} by any method (density-ratio estimation, a discriminative classifier, moment matching). Two problems arise: (a) the estimator $\hat w$ is a function of data, so treating it as fixed in a Hoeffding bound is invalid; (b) $\hat w\ne w$ introduces bias. We resolve (a) by \textbf{sample splitting} and (b) by an \textbf{$L^1$ error budget}.
+
+Split the calibration set into independent folds $\mathcal D_1$ (size $n_1$) and $\mathcal D_2$ (size $n_2$). Estimate $\hat w$ on $\mathcal D_1$ \emph{only}. Suppose the estimate is bounded, $0\le\hat w\le\hat W$, and obeys an $L^1$ error budget
+
+\begin{equation}
+\mathbb E_P\big[\,|\hat w(X)-w(X)|\,\big]\;\le\;\eta
+\qquad(\text{conditionally on }\mathcal D_1).
+\tag{$\star$}
+\end{equation}
+
+Compute the weighted empirical risk on the held-out fold, $\hat R_Q(\tau)=\frac1{n_2}\sum_{i\in\mathcal D_2}\hat w(X_i)\,\ell_i$, and test against the \textbf{deflated} target $\alpha-\eta$:
+
+\begin{equation}
+\boxed{\,p^{\,Q}_\tau \;=\; \exp\!\Big(-\tfrac{2 n_2}{\hat W^2}\,\big((\alpha-\eta)-\hat R_Q(\tau)\big)_+^2\Big)\,}.
+\tag{3}
+\end{equation}
+
+\textbf{Theorem 4 (Shift-robust validity under estimated weights).} \emph{Assume ($\star$), $0\le\hat w\le\hat W$, $\eta<\alpha$, and $Y\mid X$ invariant across $P,Q$. Then the p-value (3) is super-uniform under $H^Q_\tau:R_Q(\tau)>\alpha$, and the chain (or Bonferroni) certification of Section~3--Section~4 applied to $\{p^Q_\tau\}$ at level $\delta$ yields}
+
+\[
+\Pr\big(R_Q(\hat\tau)\le\alpha\big)\ge1-\delta\qquad(\text{under }Q).
+\]
+
+\emph{Proof.} Condition on $\mathcal D_1$; then $\hat w$ is a fixed (deterministic) function and the summands $\hat w(X_i)\ell_i$ for $i\in\mathcal D_2$ are i.i.d. in $[0,\hat W]$ with common mean $\mu:=\mathbb E_P[\hat w\,\ell_{\mathrm{loss}}]$. Decompose
+
+\[
+\mu=\mathbb E_P[w\,\ell_{\mathrm{loss}}]+\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}]=R_Q(\tau)+\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}].
+\]
+
+Since $\ell_{\mathrm{loss}}\in[0,1]$, the bias term is bounded by $|\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}]|\le\mathbb E_P|\hat w-w|\le\eta$ by ($\star$). Under $H^Q_\tau$ we have $R_Q(\tau)>\alpha$, hence $\mu\ge R_Q(\tau)-\eta>\alpha-\eta$. By one-sided Hoeffding with range $\hat W$, for any observed $\hat R_Q(\tau)=r\le\alpha-\eta$,
+
+\[
+\Pr\big(\hat R_Q(\tau)\le r\,\big|\,\mathcal D_1\big)\le\exp\!\Big(-\tfrac{2n_2}{\hat W^2}(\mu-r)^2\Big)\le\exp\!\Big(-\tfrac{2n_2}{\hat W^2}\big((\alpha-\eta)-r\big)^2\Big)=p^Q_\tau.
+\]
+
+So $p^Q_\tau$ is super-uniform under $H^Q_\tau$ conditionally on $\mathcal D_1$; since this holds for every realization of $\mathcal D_1$, it holds marginally. The downstream FWER arguments (Theorems 1--2) are unchanged, run conditionally on $\mathcal D_1$ and then marginalized, giving the stated $1-\delta$ validity under $Q$. $\square$
+
+\textbf{Reading the result.} The three costs are explicit. \emph{(i)} Data splitting shrinks the testing fold to $n_2<n$; we take $n_1$ as small as the weight estimator tolerates, since weight estimation is typically more sample-efficient than the Hoeffding slack on the testing fold. \emph{(ii)} The deflation $\alpha\to\alpha-\eta$ requires $\eta<\alpha$ and makes the certificate conservative in proportion to the weight-error budget. \emph{(iii)} Range inflation $\hat W$ --- mitigated by using the empirical-Bernstein form of (3), exactly as in Section~6.1. The budget $\eta$ has two sources: a theoretical $L^1$ rate for the chosen density-ratio estimator under stated smoothness, or --- more defensibly, since it needs no knowledge of $w$ --- a sensitivity reading: the certificate is valid for any deployment whose weight error is at most $\eta$, so the practitioner reports the largest $\eta^\star$ (the most severe shift) under which the target still holds.
+
+\textbf{Positioning.} The two ingredients are individually standard: conditioning on a held-out fold to make a plug-in estimator a fixed function, and absorbing estimation error into a margin in the spirit of sensitivity analysis (cf. the $\Gamma$-style robustness bounds and estimated-weight treatments in the conformal-under-shift literature \citep{tibshirani2020conformal,jin2023sensitivity}). The contribution is their combination in the LTT risk-control setting, where we have not seen the estimated-weight case stated with a finite-sample proof. We claim validity and interpretability, not tightness.
+
+\textbf{When this is useful, and when it is not.} Two honest limits, both visible in Section~10.1. First, $\eta$ must genuinely upper-bound the estimator's $L^1$ error for validity to hold; it cannot be read off the data. When $\eta$ is set large enough to be defensible, the deflation $\alpha-\eta$ can leave little room and the certificate becomes \emph{infeasible} --- in our simulation feasibility falls toward zero once $\eta$ approaches a fifth of $\alpha$. So the result buys robustness at a feasibility price that is only acceptable when the achievable risk sits well below $\alpha$. Second, validity when $\eta$ is \emph{under}-set is not automatic: it held in our simulation only because the fitted density-ratio happened to be conservatively biased; an anti-conservatively biased estimator with $\mathbb E|\hat w-w|>\eta$ can and does breach the target (we exhibit this in Section~10.1 with a deliberately biased estimator). The takeaway is to treat Theorem 4 as a sensitivity statement with a known feasibility cost, not as a turnkey shift fix.
+
+\section{Algorithm summary}
+
+\begin{algorithm}[t]
+\caption{Compute-adaptive risk certification}
+\begin{algorithmic}[1]
+\Require Multi-exit model with exits $1,\ldots,L$; calibration data $\mathcal D$ with $n$ points; target risk $\alpha$; confidence $\delta$; compute-increasing chain $\{\tau^{(1)}\preceq\cdots\preceq\tau^{(K)}=\mathbf 1\}$; optional budget $B$; optional shift inputs $\{\text{weight estimator},\eta\}$; split $(\delta_R,\delta_C)$.
+\If{using the shift branch}
+  \State Split $\mathcal D$ into $\mathcal D_1,\mathcal D_2$; fit $\hat w$ on $\mathcal D_1$; set the test fold to $\mathcal D_2$, the target to $\alpha-\eta$, and the range to $\hat W$.
+\Else
+  \State Set the test fold to $\mathcal D$, the target to $\alpha$, and the range to $1$.
+\EndIf
+\For{each $\tau^{(k)}$}
+  \State On the test fold compute $E_{\tau^{(k)}}(X_i)$, predictions, losses $\ell_i$, costs $c_E(X_i)$, empirical risk $\hat R(\tau^{(k)})$ or weighted $\hat R_Q(\tau^{(k)})$, and empirical compute $\hat C(\tau^{(k)})$.
+\EndFor
+\State Compute p-values $p_k$ using Eq.\ (2), Hoeffding--Bentkus, empirical Bernstein, or weighted Eq.\ (3), at the target and range from step 0.
+\State Certify risk with one pre-committed FWER rule: fixed-sequence on the chain, Holm step-down on a finite grid, or Bonferroni on the finite family; call the certified set $\hat\Lambda$.
+\If{dual risk--compute control is requested}
+  \State Filter $\hat\Lambda_B=\{k\in\hat\Lambda:\hat C(\tau^{(k)})+C_{\max}\sqrt{\ln(K/\delta_C)/(2n_{\mathrm{test}})}\le B\}$.
+  \State Output the certified budget-feasible configuration in $\hat\Lambda_B$ with smallest $\hat C$; if none exists, report infeasible and fall back to $\tau=\mathbf 1$.
+\Else
+  \State Output the certified configuration in $\hat\Lambda$ with smallest $\hat C$; if none exists, report infeasible and fall back to $\tau=\mathbf 1$.
+\EndIf
+\Ensure $\Pr(R(\hat\tau)\le\alpha\ [\text{and } C(\hat\tau)\le B])\ge1-\delta$, under $Q$ when the shift branch is used and its assumptions hold.
+\end{algorithmic}
+\end{algorithm}
+
+Cost: one forward pass collecting all exit scores per calibration point ($O(n)$ inference), then $O(nK)$ to score the chain --- negligible relative to training.
+
+\section{Related work}
+
+\begin{itemize}
+\item \textbf{Conformal prediction / risk control.} Split conformal \citep{vovk2022algorithmic,lei2018distributionfree}; conformal risk control \citep{bates2021distributionfree,angelopoulos2024conformal}; Learn-then-Test \citep{angelopoulos2025learn}---our backbone. We do \textbf{not} claim the testing reduction, the fixed-sequence/graphical tests, or the HB p-value; these are LTT's. We contribute the early-exit instantiation with a two-sided cost bound (Thm 2b), the joint risk--compute certificate for pre-committed budgets (Thm 3), and the estimated-weight shift result (Thm 4).
+\item \textbf{Multiple testing.} Bonferroni; fixed-sequence / fallback procedures \citep{wiens2003fixed}; Holm step-down \citep{holm1979simple}; and graphical sequentially-rejective tests \citep{bretz2008graphical}. We use Bonferroni, fixed-sequence, and Holm as off-the-shelf FWER tools. Graphical procedures are a more general adjacent family, but we do not implement or evaluate them here. The contribution is matching the compute order to a deployment objective, not the tests themselves.
+\item \textbf{Adaptive computation.} BranchyNet \citep{teerapittayanon2016branchynet}, MSDNet \citep{huang2018multiscale}, SkipNet \citep{wang2018skipnet}, patience-based exiting \citep{zhou2020bert}, and LLM cascades/routers \citep{chen2023frugalgpt}. These tune thresholds without distribution-free guarantees; we add the certificate and show (E3) that naive validation tuning violates the target above rate $\delta$.
+\item \textbf{Distribution shift.} Weighted conformal prediction \citep{tibshirani2020conformal}; covariate-shift risk control; sensitivity-analysis conformal under unknown or misspecified weights (e.g. $\Gamma$-selection / bounded-odds bounds, \citet{jin2023sensitivity} and related). Theorem 4 sits in this lineage: it combines sample splitting with an $L^1$ weight-error margin to give a finite-sample risk-control certificate under \emph{estimated} weights, which we have not seen stated in the LTT setting.
+\item \textbf{Selective prediction.} Selective risk and coverage \citep{geifman2017selective}; our $\ell_{\mathrm{loss}}$ can encode selective risk, unifying abstention with early exit.
+\end{itemize}
+
+\section{Implementation status and remaining protocol}
+
+\textbf{Implemented components.} The current code path used for the reported results takes cached per-exit scores, predictions, correctness indicators, and cumulative compute, then returns the certified set, selected threshold vector, and certificate fields for the requested $(\alpha,\delta,B)$. It implements the Hoeffding, Hoeffding--Bentkus, and empirical-Bernstein p-values; Bonferroni, fixed-sequence chain, and Holm selectors; the joint risk--compute test; and the estimated-weight shift diagnostic.
+
+\textbf{Completed evaluations.} The controlled-simulation scripts generate the synthetic early-exit model and the E1/E2/E5/E6 results used in Section~10.1; the complete numerical outputs are embedded in Appendix~B. The completed real-cache path evaluates a branchy ResNet-56-style CIFAR-100 cache with scalar top-softmax thresholds on a $K=100$ chain, 0--1 loss, and analytical cumulative MAC estimates. Wall-clock latency and hardware-dependent throughput are not certified quantities in the current draft.
+
+\textbf{Remaining protocol.} The ImageNet, language-cascade, tabular, and real-shift studies remain planned. They will reuse the same frozen split protocol: fix the backbone, exits, loss, chain, $(\alpha,\delta)$ grid, p-value, and split count before inspecting calibration risks; report certified-set size, selected compute, feasibility, and violation frequency with binomial intervals; and label any post hoc feasible-target study as exploratory rather than confirmatory.
+
+\section{Experiments}
+
+We separate what is \emph{done} from what is \emph{planned}. Section~10.1 reports a controlled-simulation study that has been run with the current reference implementation; its purpose is to verify that the procedure behaves as the theorems predict in a setting where ground-truth risk is available for violation counting. Section~10.2 reports a completed CIFAR-100 finite-pool cache diagnostic and then lists the remaining real-data protocol.
+
+Figure~\ref{fig:empirical-summary} gives the visual summary of the completed evidence; the appendix tables keep the exact row-level values. The panels are meant to be read as evidence boundaries: synthetic trials verify the theorem-level behavior with oracle risks, CIFAR is a finite-pool diagnostic, and the shift result is a sensitivity analysis rather than a broadly practical deployment claim.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/fig3_empirical_summary.pdf}
+\caption{\textbf{Empirical evidence summary from the completed studies.} (A) In the controlled simulation, the certified chain stays below the nominal violation levels while naive validation inspection violates far above them. (B) In the representative E2 cell, the chain has lower certified expected cost than Holm or Bonferroni, and remains close to the invalid naive reference. (C) In the CIFAR-100 finite-pool diagnostic, bars show mean violation rates across the reported split cells for each target and method; vertical labels give mean feasibility, and exact cell values are in Tables~\ref{tab:embedded-cifar-preregistered}--\ref{tab:embedded-cifar-exploratory}. The $\alpha=0.30$ target is pre-registered but infeasible in full-pool risk; $\alpha\in\{0.35,0.40\}$ is exploratory. (D) Under shift, an undersized or biased weight budget can fail, while defensible $\eta$ values make the estimated-weight certificate infeasible in this synthetic sweep.}
+\label{fig:empirical-summary}
+\end{figure}
+
+\subsection{Controlled-simulation verification (done)}
+
+We use a synthetic early-exit model ($L=5$ exits, competence increasing with depth, noisy confidences, global-threshold chain of $K=40$ configurations) whose true per-configuration risk and cost are computable by large-sample Monte Carlo, so every selected policy can be checked against the truth. This is a sanity check on the mathematics and implementation, \emph{not} evidence about real networks; it cannot validate Assumption M or weight estimability in practice (see Section~10.2). The complete row-level numerical outputs are embedded in Tables~\ref{tab:embedded-e1}--\ref{tab:embedded-e6}.
+
+\emph{Validity and naive failure (E1/E3).} Across a grid of targets and $T=3000$ calibration/test splits per cell, the certified chain violates $R(\hat\tau)\le\alpha$ at rates of $0.0010$--$0.0143$, uniformly at or below $\delta\in\{0.05,0.10\}$. The naive recipe (cheapest config with $\hat R\le\alpha$, no correction) violates at $0.2313$--$0.3513$, several-fold above the nominal level. This is the paper's central empirical point in the setting with oracle risks: naive threshold tuning silently fails, and the certificate controls the violation rate.
+
+\emph{Cost of the guarantee (E2).} At a representative $(\alpha,\delta)=(0.119,0.10)$ with $T=2000$, the certified expected cost is $3.260$ (chain), $3.311$ (Holm), and $3.326$ (Bonferroni), all with true violation $\le\delta$. At the matched E1 target, the naive invalid policy costs $3.183$, so the chain is close to the invalid policy in this synthetic setting. The chain's advantage over Bonferroni is real but small ($\approx2\%$ here) and, consistent with Theorem 2(b), widens with $K$ and with smaller $\delta$. The honest summary for this experiment is \emph{validity at near-naive cost}, with a modest additional saving from exploiting the chain order.
+
+\emph{Joint control (E5).} With $\alpha=0.089$, $\delta=0.10$, $n=2000$, and $T=1000$, a slack budget $B=4.641$ is certified feasible in every trial, with no true risk violations and mean certified compute UCB $3.620$. A tight budget $B=3.363$ is oracle-feasible --- the cheapest truly safe configuration costs $3.313$ --- but the range-$C_{\max}$ compute certificate reports infeasible in every trial. This quantifies the conservativeness flagged in Section~5.
+
+\emph{Covariate shift (E6).} Under an exp-tilt shift toward harder inputs, the unweighted certificate (calibrated on source) violates the target at rate $0.875$. The estimated-weight sweep has realized mean weight error $\|\hat w-w\|_1\approx0.060$: for underspecified budgets $\eta\in\{0,0.03\}$ the certificate remains feasible with $0$ observed violations but lacks the assumption needed for validity; near the boundary ($\eta=0.06$) feasibility drops to $0.35$; and once $\eta$ clearly covers the mean error ($\eta\in\{0.09,0.12\}$), feasibility collapses to $0$. With a deliberately downward-biased estimator and $\eta=0.02$ too small ($\|\hat w-w\|_1\approx0.351$), the certificate breaches the target at rate $0.895\gg\delta$. The result supports the intended sensitivity reading of Theorem 4: an honestly sized $\eta$ can make the certificate vacuous, while an undersized or biased weight model can invalidate the target.
+
+\subsection{CIFAR-100 real-cache diagnostic and remaining protocol}
+
+We implemented the real-cache interface on a branchy ResNet-56-style CIFAR-100 model with four exits (after the stem and after each of three residual stages), scalar top-softmax thresholds on a $K=100$ grid, 0--1 loss, and analytical cumulative MAC estimates. The model was trained for 80 epochs and evaluated on the CIFAR-100 test set. The per-exit test accuracies are $0.0646$, $0.3040$, $0.6147$, and $0.6945$; the corresponding cumulative exit costs are $0.44$, $42.91$, $84.33$, and $125.75$ million MACs. Because this is a finite test-pool diagnostic, the reported violation frequencies use held-out split risk as a proxy for population risk, not as an oracle truth measurement. The complete row-level numerical outputs are embedded in Tables~\ref{tab:embedded-cifar-preregistered}--\ref{tab:embedded-cifar-exploratory}.
+
+\textbf{Pre-registered CIFAR grid.} The frozen CIFAR E1 grid uses $\alpha\in\{0.05,0.10,0.20,0.30\}$, $\delta\in\{0.05,0.10\}$, calibration sizes $\{500,2000\}$, Hoeffding--Bentkus p-values, and $T=1000$ random calibration/test partitions per cell. This run revealed a negative feasibility result: the full test-pool minimum risk along the chain is $0.3055$, so none of the pre-registered targets has a truly safe configuration. The chain therefore mostly abstains from selection. Its violation frequency over all split attempts is $0$ for $\alpha\le0.20$ and $0.000$--$0.013$ at $\alpha=0.30$, below both tested $\delta$ values, but feasibility at $\alpha=0.30$ is only $0.000$--$0.013$. The naive selector, by contrast, selects in $0.281$--$0.457$ of the $\alpha=0.30$ split attempts and violates in exactly those attempts, since the selected finite-pool policies remain above the target. This is useful evidence for the safety/abstention behavior and the naive failure mode, but not evidence that the current CIFAR model supports low-error certified deployment at the pre-registered targets.
+
+\textbf{Exploratory feasible-target check.} To confirm that the cache evaluator behaves sensibly once the target is feasible, we ran a post hoc diagnostic at $\alpha\in\{0.35,0.40\}$ with the same $\delta$, calibration sizes, p-values, and split count. The chain violation frequencies are $0.012$--$0.038$, always below the corresponding $\delta$; naive validation tuning violates at $0.441$--$0.529$. Chain feasibility is high for $\alpha=0.40$ ($0.994$--$1.000$) and mixed for $\alpha=0.35$ ($0.484$--$0.996$), matching the fact that the feasible frontier is close to the final-exit risk. Mean chain cost is $85.65$--$105.30$ million MACs across these feasible-target cells, compared with $81.28$--$92.85$ million MACs for the invalid naive policy. Holm and Bonferroni are more conservative: they have lower or zero violation rates but lower feasibility and higher mean cost in the same cells.
+
+\textbf{Monotonicity diagnostic.} The full-pool chain risk is not perfectly nonincreasing: four adjacent threshold pairs show risk increases, with maximum increase $2\times10^{-4}$, while cost is nondecreasing. This small empirical violation does not affect validity, but it means the Assumption M efficiency interpretation should be read as a diagnostic rather than a confirmed model property on this cache.
+
+The remaining real-data study has not been run; it will use the same violation-frequency design. The next claim-deciding step is a stronger real-cache benchmark whose final-exit risk is below a fixed target before calibration, so the protocol can test certified selection rather than mostly testing infeasibility. If the study stays on CIFAR, any new feasible target grid must be registered as a new confirmation study after this diagnostic and must not be described as part of the frozen E1 pre-registration.
+
+\textbf{Backbones.} \emph{Vision:} MSDNet / early-exit ResNet-50 on ImageNet, confidence = top softmax probability (and an entropy variant). \emph{Language:} a size cascade (small$\to$medium$\to$large) as a 3-exit policy on text classification, which stresses the chain with very uneven $c_\ell$. \emph{Tabular:} a multi-exit MLP on standard benchmarks, where the i.i.d. assumption is cleanest and the certificate is easiest to audit.
+
+\textbf{E1 --- Validity.} $T\ge1000$ splits per cell; report empirical violation frequency with binomial CIs against $\delta$; sweep $\alpha\in\{0.02,0.05,0.1,0.2\}$, $\delta\in\{0.05,0.1\}$. Pass: frequency $\le\delta$ within CI in every cell.
+
+\textbf{E2 --- Cost.} Risk--compute Pareto curves and exit-index histograms; chain vs. Holm vs. Bonferroni; report the realized chain-vs-Bonferroni gap rather than assuming it is large.
+
+\textbf{E3 --- Baselines.} Naive validation tuning, BranchyNet entropy thresholds, patience exiting, full-depth; the load-bearing comparison is naive validation inspection (cheap but invalid) versus certified selection (valid when assumptions hold, with the compute premium reported per setting).
+
+\textbf{E4 --- Calibration size and the band.} Vary $n$; show certified compute approaching the cheapest safe in-chain policy with the gap tracking $\Delta_n=O(\sqrt{\ln(K/\delta)/n})$. Report empirical monotonicity of $\hat R$ along the chain as a \emph{diagnostic} (necessary, not sufficient, for Assumption M), with simultaneous CIs on the $R_k$ differences; report cases where it is violated and how Holm behaves there.
+
+\textbf{E5 --- Joint control.} Verify the joint event at rate $\ge1-\delta$; compare the Hoeffding vs. empirical-Bernstein compute bound (the latter expected to be far less often infeasible).
+
+\textbf{E6 --- Shift.} ImageNet-C corruptions and a label-shifted tabular set. Arms: unweighted (expected to violate), exact-weight oracle (efficiency ceiling on synthetic shifts), estimated-weight. Report the $\eta$-sensitivity curve (validity and feasibility vs. $\eta$), the realized $\|\hat w-w\|_1$ where a held-out estimate of it is possible, the split cost ($n_1/n_2$), and the failure mode under a biased estimator.
+
+\textbf{E7 --- Ablations.} p-value (Hoeffding vs. HB vs. empirical-Bernstein); chain granularity $K$; scalar vs. per-exit chain; chain vs. Holm.
+
+\textbf{Reporting.} Empirical summary figures pair violation frequency with compute or feasibility where relevant, so the guarantee and its price are seen together; negative results (monotonicity-diagnostic failures, shift too severe for a non-vacuous certificate) are reported explicitly.
+
+\section{Limitations}
+
+\begin{itemize}
+\item Validity rests on \textbf{i.i.d. calibration data} (or, under shift, an $L^1$ weight-error budget $\eta$ via Theorem 4); under unmodeled or unbounded shift the certificate can fail.
+\item Bounds use \textbf{bounded losses}; unbounded or heavy-tailed risks need different concentration (e.g., truncation or empirical-Bernstein with care).
+\item \textbf{Cost-optimality is within the chosen chain}, a one-dimensional slice of the configuration space; the global optimum over per-exit thresholds is not certified. Holm widens the implemented search at a $\log|\Lambda|$ efficiency cost but still does not exhaust the continuum; graphical procedures are a possible generalization, not an evaluated component of this paper.
+\item The compute certificate treats $c_\ell$ as \textbf{fixed FLOPs}; wall-clock latency under batching, caching, and hardware effects is \emph{not} the certified quantity and is reported only descriptively. The compute certificate is also the \emph{secondary} guarantee --- useful for pre-commitment, but realized compute is observable at deployment in a way realized risk is not, and the range-$C_{\max}$ bound is loose enough to be infeasible when the budget is tight.
+\item \textbf{Assumption M governs efficiency, not validity}; when it fails the returned policy is still safe but may be needlessly expensive, and we fall back to Holm. The monotonicity \emph{diagnostic} we report (monotone $\hat R$) is necessary but not sufficient for the true-risk condition.
+\item \textbf{Current real-model evidence is narrow.} The completed CIFAR-100 cache is a diagnostic on a modest branchy CNN, not a full real-data benchmark suite. Its pre-registered target grid is mostly infeasible because the final-exit test risk is $0.3055$; the feasible-target results are explicitly exploratory.
+\item \textbf{Theorem 4 is a conservative sufficient condition.} It is valid only when the unverifiable budget $(\star)$ holds; when $\eta$ is set large enough to be defensible the deflation can make the certificate infeasible, and when $\eta$ is under-set the target can be breached (both shown in Section~10.1). We give no tight (bias-corrected) version; obtaining one without sacrificing finite-sample validity is open. The budget $\eta$ must be supplied as an estimator rate or read as a sensitivity margin.
+\item \textbf{The guarantee is per single use.} Validity is training-conditional for \emph{one} run of the procedure; a user who sweeps several $(\alpha,\delta,\text{chain})$ on the same calibration set and selects the most favorable outcome reintroduces multiplicity and forfeits the guarantee. Fix $(\alpha,\delta)$ and the chain before looking at the calibration risks.
+\end{itemize}
+
+\section{Broader impact statement}
+
+This work is intended to make adaptive inference safer to deploy by replacing heuristic threshold tuning with an explicit finite-sample risk certificate. The main positive impact is operational: practitioners can state and audit when an early-exit policy satisfies a target risk rather than relying on validation-set inspection. The main risk is over-trust, especially treating an infeasible certificate, a finite-pool diagnostic, or an exploratory feasible-target check as population-level deployment evidence. The guarantee is only as good as its calibration assumptions, its single-use protocol, and, under shift, the supplied weight-error budget. A deployed system that ignores these conditions could still violate the target while appearing certified. We mitigate this risk in the paper by stating the assumptions at the point of use, reporting infeasibility rather than hiding it, and requiring pre-registration of $(\alpha,\delta)$, the chain, and the split protocol before calibration results are inspected.
+
+\section{Conclusion}
+
+Compute-adaptive models need threshold-selection procedures whose guarantees survive deployment, not only validation-set summaries. We instantiate Learn-then-Test for early-exit policies, prove distribution-free risk validity for certified selectors, characterize the compute price of searching a pre-ordered chain, and add joint risk-compute and estimated-weight shift certificates with explicit limitations. The controlled simulation verifies the central finite-sample behavior and the failure mode of naive threshold tuning with oracle risks. The CIFAR-100 cache diagnostic supports a narrower claim: the certified selector abstains under mostly infeasible pre-registered targets, and exploratory feasible-target cells show the same qualitative safety/naive-failure pattern on a finite test pool, with a visible MAC premium over the invalid naive policy. The next claim-deciding experiment is a stronger real-cache benchmark whose final-exit risk is below a fixed target before calibration, run with the same split-based violation-frequency protocol.
+
+\section{Reproducibility checklist (TMLR)}
+
+For TMLR review, the submission will use anonymized supplementary material. The current reference implementation covers the p-values, certification procedures, selectors, controlled-simulation scripts, CIFAR cache adapter, and cache-based real-data evaluator; the reported synthetic and CIFAR diagnostic results are embedded in Appendix~B; all $(\alpha,\delta,B)$, grids, seeds, and split counts used for reported experiments are specified or pre-registered, with exploratory CIFAR cells labeled separately; p-value implementations are unit-tested against their defining inequalities; violation-frequency experiments are scripted end-to-end; and compute for the CIFAR diagnostic is an analytical MAC estimate at fixed input resolution.
+
+\bibliographystyle{tmlr}
+\bibliography{main}
+
+\appendix
+
+\section{Proofs}
+
+Throughout, losses are in $[0,1]$, calibration data are $n$ i.i.d. draws from $P$, and $\epsilon_n(\beta):=\sqrt{\ln(1/\beta)/(2n)}$. A p-value $p$ for a null $H$ is \emph{valid} (super-uniform) if $\Pr_H(p\le u)\le u$ for all $u\in(0,1)$.
+
+\subsection{Validity of the Hoeffding p-value (Eq. 2)}
+
+\emph{Claim.} $p_\tau=\exp(-2n(\alpha-\hat R(\tau))_+^2)$ is valid for $H_\tau:R(\tau)\ge\alpha$.
+
+\emph{Proof.} Fix $\tau$ and write $R=R(\tau)$, $\hat R=\hat R(\tau)$. For $u\in(0,1)$, $p_\tau\le u \iff (\alpha-\hat R)_+\ge\epsilon_n(u) \iff \hat R\le\alpha-\epsilon_n(u)$ (the event is empty if $\alpha-\epsilon_n(u)<0$, making the probability $0\le u$ trivially). Under $H_\tau$, $R\ge\alpha$, so
+
+\[
+\Pr_{H_\tau}(p_\tau\le u)=\Pr(\hat R\le\alpha-\epsilon_n(u))\le\Pr(\hat R\le R-\epsilon_n(u))\le e^{-2n\epsilon_n(u)^2}=u,
+\]
+
+where the second inequality uses $\alpha\le R$ and the third is the lower-tail Hoeffding inequality for the mean of $n$ i.i.d. $[0,1]$ variables. Hence $p_\tau$ is super-uniform. The supremum over the composite null is attained at the boundary $R=\alpha$, as used above. $\square$
+
+\subsection{Bonferroni FWER (Theorem 1)}
+
+\emph{Claim.} With $\hat\Lambda_{\mathrm{Bonf}}=\{\tau:p_\tau\le\delta/|\Lambda|\}$ and valid $\{p_\tau\}$, $\Pr(\exists\tau\in\hat\Lambda_{\mathrm{Bonf}}:R(\tau)>\alpha)\le\delta$.
+
+\emph{Proof.} Let $\mathcal N=\{\tau:R(\tau)>\alpha\}$ be the true nulls. The bad event is $\bigcup_{\tau\in\mathcal N}\{p_\tau\le\delta/|\Lambda|\}$. By validity, $\Pr(p_\tau\le\delta/|\Lambda|)\le\delta/|\Lambda|$ for each $\tau\in\mathcal N$, so by the union bound the probability is at most $|\mathcal N|\cdot\delta/|\Lambda|\le|\Lambda|\cdot\delta/|\Lambda|=\delta$. Restricting any selection rule to the complement of the bad event yields a safe output, giving (P1); the infeasible case (no $\tau$ certified) deploys $\tau=\mathbf 1$ and reports infeasibility. $\square$
+
+\subsection{Fixed-sequence FWER (Theorem 2a)}
+
+\emph{Claim.} Testing a pre-specified order $\tau^{(K)},\dots,\tau^{(1)}$, certifying while $p_{\tau^{(k)}}\le\delta$ and stopping at the first failure, controls the probability of certifying any unsafe configuration at $\delta$, independent of $K$.
+
+\emph{Proof.} Let $j^\star$ be the position of the first true null in the testing order (the first tested $\tau^{(k)}$ with $R(\tau^{(k)})>\alpha$); if there is none, no unsafe config exists and the error probability is $0$. The procedure certifies a configuration only if it certifies everything earlier in the order, so it certifies an unsafe configuration only if it certifies the one at position $j^\star$ --- which requires $p$ at that position $\le\delta$. Because the order is fixed \emph{before} seeing the data, that hypothesis is a fixed true null, and by validity $\Pr(p\le\delta)\le\delta$. Thus the probability of certifying any unsafe configuration is at most $\delta$, with no dependence on $K$ (no correction is applied). $\square$
+
+\subsection{Two-sided cost bound (Theorem 2b)}
+
+Stated and proved in full in the dedicated subsection below (kept separate for length). It establishes $\Pr(k_0\le k^\star\le k_1)\ge1-2\delta$ with band $\Delta_n=\epsilon_n(\delta)+\epsilon_n(\delta/K)$, so validity carries no $K$-penalty while the search cost is an $O(\sqrt{\ln(K/\delta)/n})$ efficiency band.
+
+\subsection{Joint risk--compute control (Theorem 3)}
+
+\emph{Claim.} With $\delta=\delta_R+\delta_C$, risk certified at $\delta_R$ (Section~A.2--A.4) and the uniform compute bound $U_C(\tau;\delta_C/K)=\hat C(\tau)+C_{\max}\sqrt{\ln(K/\delta_C)/(2n)}$ over the $K$ chain points, the dual selector satisfies $\Pr(R(\hat\tau)\le\alpha\ \wedge\ C(\hat\tau)\le B)\ge1-\delta$.
+
+\emph{Proof.} Define $\mathcal A=\{\forall\tau\in\hat\Lambda:R(\tau)\le\alpha\}$ (the risk-certification event) and $\mathcal B=\{\forall k:C(\tau^{(k)})\le U_C(\tau^{(k)};\delta_C/K)\}$. For $\mathcal B$: $c_{E_\tau(X)}\in[0,C_{\max}]$, so for each fixed $k$, upper-tail Hoeffding gives $\Pr(C(\tau^{(k)})>U_C(\tau^{(k)};\delta_C/K))\le\delta_C/K$; a union bound over the $K$ (data-independent) points gives $\Pr(\mathcal B^c)\le\delta_C$. By construction $\Pr(\mathcal A^c)\le\delta_R$. On $\mathcal A\cap\mathcal B$, the selected $\hat\tau\in\hat\Lambda$ has $R(\hat\tau)\le\alpha$, and $\hat\tau\in\hat\Lambda_B$ forces $C(\hat\tau)\le U_C(\hat\tau;\delta_C/K)\le B$. Boole: $\Pr((\mathcal A\cap\mathcal B)^c)\le\delta_R+\delta_C=\delta$. The denominator $K$ is deterministic, so no data-dependent correction is involved. $\square$
+
+\subsection{Estimated-weight shift certificate (Theorem 4)}
+
+\emph{Claim.} Under ($\star$) $\mathbb E_P|\hat w-w|\le\eta$ (conditionally on $\mathcal D_1$), $0\le\hat w\le\hat W$, $\eta<\alpha$, and $Y\mid X$ invariant, the p-value (3) is valid for $H^Q_\tau:R_Q(\tau)>\alpha$, and certification at level $\delta$ gives $\Pr(R_Q(\hat\tau)\le\alpha)\ge1-\delta$ under $Q$.
+
+\emph{Proof.} Condition on $\mathcal D_1$. Then $\hat w$ is a fixed measurable function, and for $i\in\mathcal D_2$ the variables $\hat w(X_i)\ell_i$ are i.i.d. on $[0,\hat W]$ with common mean $\mu:=\mathbb E_P[\hat w\,\ell_{\mathrm{loss}}]$. Decompose $\mu=R_Q(\tau)+\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}]$, using $R_Q(\tau)=\mathbb E_P[w\,\ell_{\mathrm{loss}}]$ (which holds because $Y\mid X$ is invariant). Since $\ell_{\mathrm{loss}}\in[0,1]$, the bias term is bounded: $|\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}]|\le\mathbb E_P|\hat w-w|\le\eta$. Under $H^Q_\tau$, $R_Q(\tau)>\alpha$, hence $\mu>\alpha-\eta$. For observed $\hat R_Q=r\le\alpha-\eta$, the range-$\hat W$ Hoeffding inequality gives
+
+\[
+\Pr(\hat R_Q\le r\mid\mathcal D_1)\le\exp\!\Big(-\tfrac{2n_2}{\hat W^2}(\mu-r)^2\Big)\le\exp\!\Big(-\tfrac{2n_2}{\hat W^2}((\alpha-\eta)-r)^2\Big)=p^Q_\tau.
+\]
+
+So $p^Q_\tau$ is super-uniform under $H^Q_\tau$ conditionally on $\mathcal D_1$; since this holds for every realization of $\mathcal D_1$, it holds marginally (integrate over $\mathcal D_1$). The FWER arguments of A.2--A.4 then run conditionally on $\mathcal D_1$ and marginalize, giving $1-\delta$ validity under $Q$. The empirical-Bernstein variant replaces the range-$\hat W$ Hoeffding step with A.7 applied on $[0,\hat W]$, unchanged otherwise. $\square$
+
+\subsection{Hoeffding--Bentkus and empirical-Bernstein p-values}
+
+\textbf{Hoeffding--Bentkus.} For $H:R\ge\alpha$ with $\hat R$ the mean of $n$ i.i.d. $[0,1]$ losses, the p-value $p^{\mathrm{HB}}=\min\{\exp(-n\,\mathrm{kl}(\hat R,\alpha)),\ e\,\Pr(\mathrm{Bin}(n,\alpha)\le\lceil n\hat R\rceil)\}$ (with $\mathrm{kl}$ the binary KL divergence, and $p^{\mathrm{HB}}=1$ if $\hat R\ge\alpha$) is valid; the first term is the Cram{\'e}r--Chernoff (relative-entropy) bound and the second the Bentkus inequality, each super-uniform under $H$, so their minimum is super-uniform. We use this as the default in experiments and rely on the concentration inequalities used in \citet{bates2021distributionfree}, \citet{angelopoulos2025learn}, and \citet{angelopoulos2024conformal}, together with Bentkus's bound \citep{bentkus2004hoeffding}.
+
+\textbf{Empirical Bernstein (as implemented).} Let $\hat V_n$ be the unbiased sample variance of the $n$ losses (range $\rho$; $\rho=1$ unweighted, $\rho=\hat W$ weighted). The one-sided empirical-Bernstein inequality of \citet{maurer2009empirical} states that, for every $\beta\in(0,1)$,
+
+\begin{equation}
+\Pr\Big(R-\hat R\ \ge\ \sqrt{\tfrac{2\hat V_n\ln(1/\beta)}{n}}+\tfrac{7\rho\ln(1/\beta)}{3(n-1)}\Big)\ \le\ \beta. \tag{MP}
+\end{equation}
+
+Define, for observed $(\hat R,\hat V_n)$ with $\hat R<\alpha$, the value $u^\star\ge0$ solving
+
+\[
+\alpha-\hat R\ =\ \sqrt{\tfrac{2\hat V_n}{n}}\,\sqrt{u^\star}\ +\ \tfrac{7\rho}{3(n-1)}\,u^\star
+\]
+
+(the right side is continuous and strictly increasing from $0$ to $\infty$ in $u^\star$, so the root is unique; in closed form, with $a=\sqrt{2\hat V_n/n}$, $b=7\rho/(3(n-1))$, $c=\alpha-\hat R$, $\sqrt{u^\star}=(-a+\sqrt{a^2+4bc})/(2b)$). Set $p^{\mathrm{EB}}=\exp(-u^\star)$ (and $p^{\mathrm{EB}}=1$ if $\hat R\ge\alpha$).
+
+\emph{Claim.} $p^{\mathrm{EB}}$ is valid for $H:R\ge\alpha$.
+
+\emph{Proof.} Because the deviation $D(\beta):=\sqrt{2\hat V_n\ln(1/\beta)/n}+7\rho\ln(1/\beta)/(3(n-1))$ is strictly increasing in $\ln(1/\beta)$, the definition of $u^\star$ gives the equivalence $p^{\mathrm{EB}}\le\beta\iff u^\star\ge\ln(1/\beta)\iff \alpha-\hat R\ge D(\beta)$. Under $H$, $R\ge\alpha$, so $\{\alpha-\hat R\ge D(\beta)\}\subseteq\{R-\hat R\ge D(\beta)\}$, and by (MP),
+
+\[
+\Pr_H(p^{\mathrm{EB}}\le\beta)=\Pr_H(\alpha-\hat R\ge D(\beta))\le\Pr_H(R-\hat R\ge D(\beta))\le\beta.
+\]
+
+Hence $p^{\mathrm{EB}}$ is super-uniform. Validity holds with $\hat V_n$ random because (MP) is itself an empirical-variance inequality, valid simultaneously over the realized $\hat V_n$. $\square$
+
+(The reference implementation computes exactly this $u^\star$; the unit tests confirm $\Pr(p\le\beta)\le\beta$ under $R=\alpha$ by Monte Carlo for all three p-values.)
+
+\subsection{Full proof of the two-sided cost bound (Theorem 2b)}
+
+\textbf{Standing notation.}
+
+(N1) Calibration data $\mathcal D=\{(X_i,Y_i)\}_{i=1}^n$ i.i.d. from $P$.
+
+(N2) Chain $\tau^{(1)},\dots,\tau^{(K)}$ with deterministically nondecreasing compute $C_1\le\dots\le C_K$, where $C_k:=C(\tau^{(k)})$ (Section~4.1: raising the global threshold can only push each input to a deeper exit, so the per-input cost $c_{E_{\tau^{(k)}}(\cdot)}$ is pointwise nondecreasing in $k$, hence so is its expectation).
+
+(N3) Per-point losses $\ell_{ik}:=\ell_{\mathrm{loss}}(\hat Y_{\tau^{(k)}}(X_i),Y_i)\in[0,1]$; $\hat R_k:=\frac1n\sum_i\ell_{ik}$, $R_k:=\mathbb E[\hat R_k]=R(\tau^{(k)})$.
+
+(N4) Slack $\epsilon_n(\beta):=\sqrt{\ln(1/\beta)/(2n)}$. With the Hoeffding p-value $p_k=\exp(-2n(\alpha-\hat R_k)_+^2)$, the certification test $p_k\le\delta$ is \textbf{exactly} $\hat R_k\le\alpha-\epsilon_n(\delta)$.
+
+The fixed-sequence walk from expensive to cheap certifies a suffix of the compute order; equivalently
+
+\[
+k^\star\;=\;\min\Big\{\,k:\ \hat R_j\le\alpha-\epsilon_n(\delta)\ \text{for all}\ j\ge k\,\Big\},
+\]
+
+with the convention $k^\star:=K+1$ (report infeasible, deploy $\tau^{(K)}$) if the set is empty. Output $\hat\tau=\tau^{(k^\star)}$. Let $k_0:=\min\{k:R_k\le\alpha\}$ be the cheapest truly-safe index ($k_0:=K+1$ if no config is safe).
+
+\textbf{Lemma A.4.1 (Hoeffding, both tails).} For each fixed $k$ and any $t\ge0$,
+
+\[
+\Pr(\hat R_k\le R_k-t)\le e^{-2nt^2},\qquad \Pr(\hat R_k\ge R_k+t)\le e^{-2nt^2}.
+\]
+
+\emph{Proof.} The $\{\ell_{ik}\}_{i=1}^n$ are i.i.d. in $[0,1]$ with mean $R_k$; apply Hoeffding's inequality to each tail. $\square$
+
+\emph{No independence across configurations $k$ is used anywhere below: every aggregation over $k$ is a union (Boole) bound, which holds for arbitrarily dependent events.}
+
+\textbf{Input --- validity (Appendix A.3, restated).} Because the testing order is fixed a priori and the walk stops at the first non-rejection, the event $\mathcal U:=\{k^\star\le K\ \text{and}\ R_{k^\star}>\alpha\}$ --- "certify and output an unsafe config" --- satisfies $\Pr(\mathcal U)\le\delta$. Write $\mathcal V:=\mathcal U^{c}$, so $\Pr(\mathcal V)\ge1-\delta$, and on $\mathcal V$ the method either reports infeasible or outputs a config with $R_{k^\star}\le\alpha$.
+
+\textbf{Proposition A.4.2 (safety floor --- lower bound).}
+
+\[
+\Pr\Big(C(\hat\tau)\ \ge\ \min_{k:\,R_k\le\alpha}C_k\Big)\ \ge\ 1-\delta .
+\]
+
+Under Assumption M ($R_1\ge\dots\ge R_K$) this is equivalently $\Pr(k^\star\ge k_0)\ge1-\delta$.
+
+\emph{Proof.} Work on $\mathcal V$. If the method certifies ($k^\star\le K$), then $R_{k^\star}\le\alpha$, so $\tau^{(k^\star)}$ is safe and $C(\hat\tau)=C_{k^\star}\ge\min_{k:R_k\le\alpha}C_k$ by definition of the minimum; if it reports infeasible, $\hat\tau=\tau^{(K)}$ and $C(\hat\tau)=C_K\ge\min_{k:R_k\le\alpha}C_k$ since $C_K$ is the largest compute. Either way the inequality holds on $\mathcal V$. Under Assumption M the safe set $\{k:R_k\le\alpha\}=\{k_0,\dots,K\}$ is a suffix and $C_k$ is nondecreasing, so $\min_{k\ge k_0}C_k=C_{k_0}$; moreover any $k<k_0$ has $R_k\ge R_{k_0-1}>\alpha$, so a safe output forces $k^\star\ge k_0$. $\square$
+
+\textbf{Proposition A.4.3 (efficiency ceiling --- upper bound).} For any $\beta\in(0,1)$ put
+
+\[
+\Delta_n(\beta):=\epsilon_n(\delta)+\epsilon_n(\beta/K),\qquad
+k_1(\beta):=\min\{k:\ R_j\le\alpha-\Delta_n(\beta)\ \text{for all}\ j\ge k\}.
+\]
+
+Then $\Pr\big(k^\star\le k_1(\beta)\big)\ge1-\beta$.
+
+\emph{Proof.} If every $j\ge k_1(\beta)$ certifies --- i.e. $\hat R_j\le\alpha-\epsilon_n(\delta)$ --- then by definition $k^\star\le k_1(\beta)$. Hence
+
+\[
+\Pr\big(k^\star> k_1(\beta)\big)\le\Pr\Big(\exists\,j\ge k_1(\beta):\ \hat R_j>\alpha-\epsilon_n(\delta)\Big).
+\]
+
+Fix $j\ge k_1(\beta)$. By the defining property of $k_1(\beta)$, $R_j\le\alpha-\Delta_n(\beta)=\alpha-\epsilon_n(\delta)-\epsilon_n(\beta/K)$, so $\alpha-\epsilon_n(\delta)\ge R_j+\epsilon_n(\beta/K)$, and the upper tail of Lemma A.4.1 with $t=\epsilon_n(\beta/K)$ gives
+
+\[
+\Pr\big(\hat R_j>\alpha-\epsilon_n(\delta)\big)\le\Pr\big(\hat R_j>R_j+\epsilon_n(\beta/K)\big)\le e^{-2n\,\epsilon_n(\beta/K)^2}=\beta/K .
+\]
+
+A union bound over the at most $K$ indices $j\in\{k_1(\beta),\dots,K\}$ gives $\Pr(k^\star> k_1(\beta))\le K\cdot(\beta/K)=\beta$. $\square$
+
+(Proposition A.4.3 uses neither Assumption M nor cross-config independence.)
+
+\textbf{Theorem A.4.4 (two-sided cost bound).} With $\beta=\delta$, write
+
+\[
+\Delta_n:=\epsilon_n(\delta)+\epsilon_n(\delta/K)=O\!\Big(\sqrt{\tfrac{\ln(K/\delta)}{n}}\Big),\qquad k_1:=k_1(\delta).
+\]
+
+Then on an event of probability at least $1-2\delta$,
+
+\[
+k_0\ \le\ k^\star\ \le\ k_1,\qquad\text{and}\qquad 0\ \le\ C(\hat\tau)-C_{k_0}\ \le\ C_{k_1}-C_{k_0}.
+\]
+
+Under Assumption M the thresholds collapse to $k_0=\min\{k:R_k\le\alpha\}$ and $k_1=\min\{k:R_k\le\alpha-\Delta_n\}$ (the "for all $j\ge k$" conditions reduce to single-index conditions because $R_k$ is nonincreasing), so the excess compute $C_{k_1}-C_{k_0}$ is exactly the compute spanned by configurations whose true risk lies in the boundary band $(\alpha-\Delta_n,\ \alpha]$.
+
+\emph{Proof.} Intersect the events of Propositions A.4.2 and A.4.3 (with $\beta=\delta$); by Boole's inequality the intersection has probability $\ge1-2\delta$. There $k_0\le k^\star\le k_1$, and the compute inequalities follow because $C_k$ is nondecreasing in $k$. The Assumption-M simplification is immediate from monotone $R_k$. $\square$
+
+\textbf{Corollary A.4.5 (consistency and rate).} Suppose along the band the chain relates compute to risk Lipschitz-ly: $\exists\,\Lambda_C<\infty$ with $C_{k_1}-C_{k_0}\le\Lambda_C\,(R_{k_0}-R_{k_1})\le\Lambda_C\,\Delta_n$. Then with probability $\ge1-2\delta$,
+
+\[
+C(\hat\tau)-\min_{k:\,R_k\le\alpha}C_k\ \le\ \Lambda_C\,\Delta_n\ =\ O\!\Big(\sqrt{\tfrac{\ln(K/\delta)}{n}}\Big)\ \xrightarrow[n\to\infty]{}\ 0 .
+\]
+
+\emph{Proof.} Immediate from Theorem A.4.4 and the assumed Lipschitz relation. $\square$
+
+\textbf{Remarks.}
+
+\emph{(i) Where each ingredient enters.} Validity (Prop. A.4.2) is $K$-free: it is the level-$\delta$ fixed-sequence guarantee. The $\ln K$ enters only the efficiency band $\Delta_n$ (Prop. A.4.3), through the union bound over the certified suffix. This is the precise sense of "the cost of a length-$K$ search is paid in efficiency, not validity."
+
+\emph{(ii) Decoupled confidences.} Validity holds at level $\delta$ and the ceiling at an independent level $\beta$; reporting the sandwich at $1-\delta-\beta$ lets one buy a tighter efficiency statement (smaller $\beta$, wider band) without touching validity.
+
+\emph{(iii) Role of Assumption M.} Used only to turn the safety floor into the index form $k^\star\ge k_0$ and to collapse $k_0,k_1$ into clean risk thresholds. The probabilistic content of Props. A.4.2--A.4.3 is assumption-free; when M fails, use the Holm fallback (validity preserved) and read the lower bound in compute form $C(\hat\tau)\ge\min_{\text{safe}}C_k$. A graphical procedure could be substituted in future work, but it is not evaluated here.
+
+\emph{(iv) Tighter p-values.} Replacing Hoeffding by Hoeffding--Bentkus or empirical-Bernstein shrinks $\epsilon_n(\delta)$, hence $\Delta_n$, with no change to the argument.
+
+\section{Extended experimental detail}
+
+The controlled-simulation configuration of Section~10.1 uses a synthetic early-exit simulator with $L=5$ exits and a $K=40$ global-threshold chain. The E1/E3 validity study uses $n=1000$ calibration examples and $T=3000$ trials per $(\alpha,\delta)$ cell. The E2/E7 cost comparison uses $n=1000$ and $T=2000$. The E5 joint-control study uses $n=2000$, $T=1000$, $\alpha=0.0888475$, and $\delta=0.10$. The E6 shift study uses $T=400$, $\lambda=2.0$, and a split of $n_1=n_2=2500$.
+
+The CIFAR-100 diagnostic in Section~10.2 uses a Branchy ResNet-56-style model with exits after the stem, stage 1, stage 2, and stage 3. The cache contains $n=10000$ test examples, $K=100$ scalar thresholds, top-softmax confidence, 0--1 loss, and cumulative analytical MAC estimates $[443{,}968,\;42{,}911{,}296,\;84{,}331{,}648,\;125{,}753{,}600]$. The checkpoint records epoch 80 and per-exit test accuracies $[0.0646,\;0.3040,\;0.6147,\;0.6945]$. The full-pool chain cost is nondecreasing; the full-pool chain risk has four adjacent increases, maximum adjacent increase $2\times10^{-4}$, and minimum risk $0.3055$. Remaining ImageNet, language-cascade, tabular, corruption-suite, and weight-estimation details will be tabulated when those studies are run.
+
+\subsection{Embedded numerical results}
+
+Tables~\ref{tab:embedded-e1}--\ref{tab:embedded-cifar-exploratory} embed the numerical outputs used in Section~10. The submitted manuscript therefore does not rely on local result files. A dash indicates that a method did not select a policy in that cell, so conditional mean risk or cost is not applicable.
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{longtable}{@{}lllllllll@{}}
+\caption{Synthetic E1/E3 validity and naive-baseline results. Violation entries are counts/rates over all $T=3000$ trials.}\label{tab:embedded-e1}\\
+\toprule
+$\alpha$ & $\delta$ & Chain feas. & Chain viol. & Chain CI & Chain cost & Naive feas. & Naive viol. & Naive cost \\
+\midrule
+\endfirsthead
+\toprule
+$\alpha$ & $\delta$ & Chain feas. & Chain viol. & Chain CI & Chain cost & Naive feas. & Naive viol. & Naive cost \\
+\midrule
+\endhead
+0.079 & 0.05 & 2578/3000 (0.859) & 3/3000 (0.001) & [0.000,0.003] & 3.509 & 3000/3000 (1.000) & 694/3000 (0.231) & 3.383 \\
+0.079 & 0.10 & 2734/3000 (0.911) & 5/3000 (0.002) & [0.001,0.004] & 3.492 & 3000/3000 (1.000) & 694/3000 (0.231) & 3.383 \\
+0.119 & 0.05 & 3000/3000 (1.000) & 18/3000 (0.006) & [0.004,0.009] & 3.276 & 3000/3000 (1.000) & 1054/3000 (0.351) & 3.183 \\
+0.119 & 0.10 & 3000/3000 (1.000) & 43/3000 (0.014) & [0.010,0.019] & 3.262 & 3000/3000 (1.000) & 1054/3000 (0.351) & 3.183 \\
+0.189 & 0.05 & 3000/3000 (1.000) & 16/3000 (0.005) & [0.003,0.009] & 3.024 & 3000/3000 (1.000) & 912/3000 (0.304) & 2.944 \\
+0.189 & 0.10 & 3000/3000 (1.000) & 35/3000 (0.012) & [0.008,0.016] & 3.011 & 3000/3000 (1.000) & 912/3000 (0.304) & 2.944 \\
+\bottomrule
+\end{longtable}
+
+\begin{longtable}{@{}lllllllll@{}}
+\caption{Synthetic E2/E7 chain, Holm, Bonferroni, and p-value ablation. Here $\alpha=0.1188475$, $\delta=0.10$, $n=1000$, and $T=2000$.}\label{tab:embedded-e2}\\
+\toprule
+Method & p-value & Feas. & Viol. & CI & Mean cost & $n$ & $T$ & $\alpha$ \\
+\midrule
+\endfirsthead
+\toprule
+Method & p-value & Feas. & Viol. & CI & Mean cost & $n$ & $T$ & $\alpha$ \\
+\midrule
+\endhead
+chain & hb & 2000/2000 (1.000) & 32/2000 (0.016) & [0.011,0.023] & 3.260 & 1000 & 2000 & 0.119 \\
+chain & hoeffding & 2000/2000 (1.000) & 0/2000 (0.000) & [0.000,0.002] & 3.344 & 1000 & 2000 & 0.119 \\
+holm & hb & 2000/2000 (1.000) & 1/2000 (0.001) & [0.000,0.003] & 3.311 & 1000 & 2000 & 0.119 \\
+holm & hoeffding & 2000/2000 (1.000) & 0/2000 (0.000) & [0.000,0.002] & 3.459 & 1000 & 2000 & 0.119 \\
+bonferroni & hb & 2000/2000 (1.000) & 1/2000 (0.001) & [0.000,0.003] & 3.326 & 1000 & 2000 & 0.119 \\
+bonferroni & hoeffding & 2000/2000 (1.000) & 0/2000 (0.000) & [0.000,0.002] & 3.487 & 1000 & 2000 & 0.119 \\
+\bottomrule
+\end{longtable}
+
+\begin{longtable}{@{}llllllll@{}}
+\caption{Synthetic E5 joint risk--compute control. The oracle cheapest safe cost is $3.312705$; $\alpha=0.0888475$, $\delta=0.10$, $n=2000$, and $T=1000$.}\label{tab:embedded-e5}\\
+\toprule
+Budget case & $B$ & Oracle feasible & Feas. & Risk viol. & Risk CI & Mean UCB & Mean true cost \\
+\midrule
+\endfirsthead
+\toprule
+Budget case & $B$ & Oracle feasible & Feas. & Risk viol. & Risk CI & Mean UCB & Mean true cost \\
+\midrule
+\endhead
+slack & 4.641 & yes & 1000/1000 (1.000) & 0/1000 (0.000) & [0.000,0.004] & 3.620 & 3.387 \\
+tight\_oracle\_feasible & 3.363 & yes & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+\bottomrule
+\end{longtable}
+
+\begin{longtable}{@{}llllllllll@{}}
+\caption{Synthetic E6 shift results. Weighted-arm violation rates are conditional on feasible selections; when feasibility is zero, the rate is not applicable.}\label{tab:embedded-e6}\\
+\toprule
+Arm & $\alpha$ & $\eta$ & $\|\hat w-w\|_1$ & $(\star)$ & Feas. & Viol. & CI & $\delta$ & Note \\
+\midrule
+\endfirsthead
+\toprule
+Arm & $\alpha$ & $\eta$ & $\|\hat w-w\|_1$ & $(\star)$ & Feas. & Viol. & CI & $\delta$ & Note \\
+\midrule
+\endhead
+unweighted & 0.161 & -- & -- & no & 400/400 (1.000) & 350/400 (0.875) & [0.839,0.906] & 0.10 & source-calibrated \\
+estimated & -- & 0.00 & 0.060 & no & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & eta sweep \\
+exact & -- & 0.00 & 0.000 & yes & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & oracle weights \\
+estimated & -- & 0.03 & 0.060 & no & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & eta sweep \\
+exact & -- & 0.03 & 0.000 & yes & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & oracle weights \\
+estimated & -- & 0.06 & 0.060 & no & 140/400 (0.350) & 0/140 (0.000) & [0.000,0.026] & -- & eta sweep \\
+exact & -- & 0.06 & 0.000 & yes & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & oracle weights \\
+estimated & -- & 0.09 & 0.060 & yes & 0/400 (0.000) & 0/0 (--) & [0.000,0.975] & -- & eta sweep \\
+exact & -- & 0.09 & 0.000 & yes & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & oracle weights \\
+estimated & -- & 0.12 & 0.060 & yes & 0/400 (0.000) & 0/0 (--) & [0.000,0.975] & -- & eta sweep \\
+exact & -- & 0.12 & 0.000 & yes & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & oracle weights \\
+biased & 0.091 & 0.02 & 0.351 & no & 400/400 (1.000) & 358/400 (0.895) & [0.861,0.923] & 0.10 & failure mode \\
+\bottomrule
+\end{longtable}
+
+\begin{longtable}{@{}llllllllll@{}}
+\caption{CIFAR-100 pre-registered finite-pool cache diagnostic. The run uses HB p-values, $T=1000$, violation denominator ``all'', scalar top-softmax thresholds on a $K=100$ chain, and analytical MAC estimates. None of the pre-registered targets has a truly safe full-pool chain configuration because the minimum full-pool chain risk is $0.3055$.}\label{tab:embedded-cifar-preregistered}\\
+\toprule
+$\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Risk & Cost (M MACs) \\
+\midrule
+\endfirsthead
+\toprule
+$\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Risk & Cost (M MACs) \\
+\midrule
+\endhead
+0.05 & 0.05 & 500 & 9500 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.05 & 500 & 9500 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.05 & 500 & 9500 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.05 & 500 & 9500 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.05 & 2000 & 8000 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.05 & 2000 & 8000 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.05 & 2000 & 8000 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.05 & 2000 & 8000 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.10 & 500 & 9500 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.10 & 500 & 9500 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.10 & 500 & 9500 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.10 & 500 & 9500 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.10 & 2000 & 8000 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.10 & 2000 & 8000 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.10 & 2000 & 8000 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.05 & 0.10 & 2000 & 8000 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.05 & 500 & 9500 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.05 & 500 & 9500 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.05 & 500 & 9500 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.05 & 500 & 9500 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.05 & 2000 & 8000 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.05 & 2000 & 8000 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.05 & 2000 & 8000 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.05 & 2000 & 8000 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.10 & 500 & 9500 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.10 & 500 & 9500 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.10 & 500 & 9500 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.10 & 500 & 9500 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.10 & 2000 & 8000 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.10 & 2000 & 8000 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.10 & 2000 & 8000 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.10 & 0.10 & 2000 & 8000 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.05 & 500 & 9500 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.05 & 500 & 9500 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.05 & 500 & 9500 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.05 & 500 & 9500 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.05 & 2000 & 8000 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.05 & 2000 & 8000 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.05 & 2000 & 8000 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.05 & 2000 & 8000 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.10 & 500 & 9500 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.10 & 500 & 9500 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.10 & 500 & 9500 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.10 & 500 & 9500 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.10 & 2000 & 8000 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.10 & 2000 & 8000 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.10 & 2000 & 8000 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.20 & 0.10 & 2000 & 8000 & naive & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.05 & 500 & 9500 & chain & 4/1000 (0.004) & 4/1000 (0.004) & [0.001,0.010] & 0.311 & 112.11 \\
+0.30 & 0.05 & 500 & 9500 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.05 & 500 & 9500 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.05 & 500 & 9500 & naive & 457/1000 (0.457) & 457/1000 (0.457) & [0.426,0.488] & 0.322 & 104.63 \\
+0.30 & 0.05 & 2000 & 8000 & chain & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.05 & 2000 & 8000 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.05 & 2000 & 8000 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.05 & 2000 & 8000 & naive & 281/1000 (0.281) & 281/1000 (0.281) & [0.253,0.310] & 0.314 & 110.36 \\
+0.30 & 0.10 & 500 & 9500 & chain & 13/1000 (0.013) & 13/1000 (0.013) & [0.007,0.022] & 0.315 & 110.99 \\
+0.30 & 0.10 & 500 & 9500 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.10 & 500 & 9500 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.10 & 500 & 9500 & naive & 434/1000 (0.434) & 434/1000 (0.434) & [0.403,0.465] & 0.322 & 104.55 \\
+0.30 & 0.10 & 2000 & 8000 & chain & 4/1000 (0.004) & 4/1000 (0.004) & [0.001,0.010] & 0.316 & 112.53 \\
+0.30 & 0.10 & 2000 & 8000 & holm & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.10 & 2000 & 8000 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
+0.30 & 0.10 & 2000 & 8000 & naive & 302/1000 (0.302) & 302/1000 (0.302) & [0.274,0.332] & 0.314 & 110.88 \\
+\bottomrule
+\end{longtable}
+
+\begin{longtable}{@{}llllllllll@{}}
+\caption{CIFAR-100 exploratory feasible-target finite-pool cache diagnostic. This post hoc run uses HB p-values, $T=1000$, violation denominator ``all'', the same cache and chain as Table~\ref{tab:embedded-cifar-preregistered}, and targets $\alpha\in\{0.35,0.40\}$.}\label{tab:embedded-cifar-exploratory}\\
+\toprule
+$\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Risk & Cost (M MACs) \\
+\midrule
+\endfirsthead
+\toprule
+$\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Risk & Cost (M MACs) \\
+\midrule
+\endhead
+0.35 & 0.05 & 500 & 9500 & chain & 484/1000 (0.484) & 17/1000 (0.017) & [0.010,0.027] & 0.321 & 105.30 \\
+0.35 & 0.05 & 500 & 9500 & holm & 75/1000 (0.075) & 1/1000 (0.001) & [0.000,0.006] & 0.318 & 106.79 \\
+0.35 & 0.05 & 500 & 9500 & bonferroni & 75/1000 (0.075) & 1/1000 (0.001) & [0.000,0.006] & 0.317 & 107.42 \\
+0.35 & 0.05 & 500 & 9500 & naive & 990/1000 (0.990) & 472/1000 (0.472) & [0.441,0.503] & 0.350 & 92.85 \\
+0.35 & 0.05 & 2000 & 8000 & chain & 996/1000 (0.996) & 20/1000 (0.020) & [0.012,0.031] & 0.327 & 100.62 \\
+0.35 & 0.05 & 2000 & 8000 & holm & 789/1000 (0.789) & 1/1000 (0.001) & [0.000,0.006] & 0.317 & 106.52 \\
+0.35 & 0.05 & 2000 & 8000 & bonferroni & 789/1000 (0.789) & 0/1000 (0.000) & [0.000,0.004] & 0.316 & 107.01 \\
+0.35 & 0.05 & 2000 & 8000 & naive & 1000/1000 (1.000) & 441/1000 (0.441) & [0.410,0.472] & 0.349 & 92.42 \\
+0.35 & 0.10 & 500 & 9500 & chain & 616/1000 (0.616) & 38/1000 (0.038) & [0.027,0.052] & 0.324 & 103.34 \\
+0.35 & 0.10 & 500 & 9500 & holm & 110/1000 (0.110) & 2/1000 (0.002) & [0.000,0.007] & 0.318 & 107.33 \\
+0.35 & 0.10 & 500 & 9500 & bonferroni & 110/1000 (0.110) & 1/1000 (0.001) & [0.000,0.006] & 0.317 & 107.81 \\
+0.35 & 0.10 & 500 & 9500 & naive & 989/1000 (0.989) & 506/1000 (0.506) & [0.475,0.537] & 0.352 & 92.42 \\
+0.35 & 0.10 & 2000 & 8000 & chain & 995/1000 (0.995) & 37/1000 (0.037) & [0.026,0.051] & 0.330 & 99.35 \\
+0.35 & 0.10 & 2000 & 8000 & holm & 835/1000 (0.835) & 4/1000 (0.004) & [0.001,0.010] & 0.318 & 105.87 \\
+0.35 & 0.10 & 2000 & 8000 & bonferroni & 835/1000 (0.835) & 1/1000 (0.001) & [0.000,0.006] & 0.317 & 106.41 \\
+0.35 & 0.10 & 2000 & 8000 & naive & 1000/1000 (1.000) & 453/1000 (0.453) & [0.422,0.484] & 0.349 & 92.51 \\
+0.40 & 0.05 & 500 & 9500 & chain & 994/1000 (0.994) & 12/1000 (0.012) & [0.006,0.021] & 0.353 & 92.25 \\
+0.40 & 0.05 & 500 & 9500 & holm & 824/1000 (0.824) & 0/1000 (0.000) & [0.000,0.004] & 0.333 & 99.13 \\
+0.40 & 0.05 & 500 & 9500 & bonferroni & 824/1000 (0.824) & 0/1000 (0.000) & [0.000,0.004] & 0.329 & 100.91 \\
+0.40 & 0.05 & 500 & 9500 & naive & 1000/1000 (1.000) & 529/1000 (0.529) & [0.498,0.560] & 0.399 & 81.28 \\
+0.40 & 0.05 & 2000 & 8000 & chain & 1000/1000 (1.000) & 23/1000 (0.023) & [0.015,0.034] & 0.375 & 86.35 \\
+0.40 & 0.05 & 2000 & 8000 & holm & 1000/1000 (1.000) & 2/1000 (0.002) & [0.000,0.007] & 0.362 & 89.15 \\
+0.40 & 0.05 & 2000 & 8000 & bonferroni & 1000/1000 (1.000) & 0/1000 (0.000) & [0.000,0.004] & 0.359 & 89.79 \\
+0.40 & 0.05 & 2000 & 8000 & naive & 1000/1000 (1.000) & 462/1000 (0.462) & [0.431,0.493] & 0.398 & 81.52 \\
+0.40 & 0.10 & 500 & 9500 & chain & 995/1000 (0.995) & 27/1000 (0.027) & [0.018,0.039] & 0.358 & 90.59 \\
+0.40 & 0.10 & 500 & 9500 & holm & 867/1000 (0.867) & 0/1000 (0.000) & [0.000,0.004] & 0.335 & 98.29 \\
+0.40 & 0.10 & 500 & 9500 & bonferroni & 867/1000 (0.867) & 0/1000 (0.000) & [0.000,0.004] & 0.331 & 99.91 \\
+0.40 & 0.10 & 500 & 9500 & naive & 1000/1000 (1.000) & 505/1000 (0.505) & [0.474,0.536] & 0.399 & 81.32 \\
+0.40 & 0.10 & 2000 & 8000 & chain & 1000/1000 (1.000) & 16/1000 (0.016) & [0.009,0.026] & 0.378 & 85.65 \\
+0.40 & 0.10 & 2000 & 8000 & holm & 1000/1000 (1.000) & 0/1000 (0.000) & [0.000,0.004] & 0.364 & 88.68 \\
+0.40 & 0.10 & 2000 & 8000 & bonferroni & 1000/1000 (1.000) & 0/1000 (0.000) & [0.000,0.004] & 0.361 & 89.33 \\
+0.40 & 0.10 & 2000 & 8000 & naive & 1000/1000 (1.000) & 445/1000 (0.445) & [0.414,0.476] & 0.398 & 81.53 \\
+\bottomrule
+\end{longtable}
+\endgroup
+
+\end{document}

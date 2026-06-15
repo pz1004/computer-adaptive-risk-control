@@ -1,0 +1,174 @@
+{
+  "config": {
+    "T": 400,
+    "lam": 2.0,
+    "n1": 2500,
+    "n2": 2500
+  },
+  "description": "Synthetic covariate-shift eta-sensitivity sweep",
+  "eta_sweep": [
+    {
+      "assumption_star_holds": false,
+      "estimated_weight": {
+        "feasible_count": 400,
+        "feasible_rate": 1.0,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.00917980458366526
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "eta": 0.0,
+      "exact_weight": {
+        "feasible_count": 400,
+        "feasible_rate": 1.0,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.00917980458366526
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "mean_l1": 0.06019337265242854
+    },
+    {
+      "assumption_star_holds": false,
+      "estimated_weight": {
+        "feasible_count": 400,
+        "feasible_rate": 1.0,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.00917980458366526
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "eta": 0.03,
+      "exact_weight": {
+        "feasible_count": 400,
+        "feasible_rate": 1.0,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.00917980458366526
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "mean_l1": 0.06019337265242854
+    },
+    {
+      "assumption_star_holds": false,
+      "estimated_weight": {
+        "feasible_count": 140,
+        "feasible_rate": 0.35,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.026005029351292668
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "eta": 0.06,
+      "exact_weight": {
+        "feasible_count": 400,
+        "feasible_rate": 1.0,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.00917980458366526
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "mean_l1": 0.06019337265242854
+    },
+    {
+      "assumption_star_holds": true,
+      "estimated_weight": {
+        "feasible_count": 0,
+        "feasible_rate": 0.0,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.975
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "eta": 0.09,
+      "exact_weight": {
+        "feasible_count": 400,
+        "feasible_rate": 1.0,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.00917980458366526
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "mean_l1": 0.06019337265242854
+    },
+    {
+      "assumption_star_holds": true,
+      "estimated_weight": {
+        "feasible_count": 0,
+        "feasible_rate": 0.0,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.975
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "eta": 0.12,
+      "exact_weight": {
+        "feasible_count": 400,
+        "feasible_rate": 1.0,
+        "target_violation_ci95_feasible": [
+          0.0,
+          0.00917980458366526
+        ],
+        "target_violation_count": 0,
+        "target_violation_rate_feasible": 0.0
+      },
+      "mean_l1": 0.06019337265242854
+    }
+  ],
+  "experiment": "e6_shift_eta_sweep",
+  "failure_mode": {
+    "alpha": 0.091055,
+    "assumption_star_holds": false,
+    "delta": 0.1,
+    "eta": 0.02,
+    "feasible_count": 400,
+    "feasible_rate": 1.0,
+    "mean_l1": 0.3512712960659033,
+    "target_violation_ci95_feasible": [
+      0.8607269465681883,
+      0.9232714126691961
+    ],
+    "target_violation_count": 358,
+    "target_violation_rate_feasible": 0.895
+  },
+  "git_sha": "100342d94d5d22666b3f6ee28634ab016a2a7f0f",
+  "simulator": {
+    "K": 40,
+    "L": 5,
+    "oracle_seed": 12345,
+    "seed": 21
+  },
+  "unweighted": {
+    "T": 400,
+    "alpha": 0.161055,
+    "delta": 0.1,
+    "feasible_count": 400,
+    "feasible_rate": 1.0,
+    "lam": 2.0,
+    "n2": 2500,
+    "target_violation_ci95_feasible": [
+      0.8385413405693943,
+      0.905781485313414
+    ],
+    "target_violation_count": 350,
+    "target_violation_rate_feasible": 0.875
+  }
+}

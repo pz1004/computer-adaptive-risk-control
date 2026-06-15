@@ -1,0 +1,50 @@
+{
+  "cheapest_oracle_safe_cost": 3.312705,
+  "config": {
+    "T": 1000,
+    "alpha": 0.0888475,
+    "delta": 0.1,
+    "n": 2000
+  },
+  "description": "Synthetic joint risk-compute control",
+  "experiment": "e5_joint_control",
+  "git_sha": "100342d94d5d22666b3f6ee28634ab016a2a7f0f",
+  "rows": [
+    {
+      "budget": 4.6412277500000005,
+      "budget_case": "slack",
+      "feasible_count": 1000,
+      "feasible_rate": 1.0,
+      "mean_certified_compute_ucb": 3.6197131827344737,
+      "mean_true_selected_cost": 3.3868425825000004,
+      "oracle_budget_safe_exists": true,
+      "risk_violation_ci95": [
+        0.0,
+        0.003682083896865671
+      ],
+      "risk_violation_count": 0,
+      "risk_violation_rate": 0.0
+    },
+    {
+      "budget": 3.3627049999999996,
+      "budget_case": "tight_oracle_feasible",
+      "feasible_count": 0,
+      "feasible_rate": 0.0,
+      "mean_certified_compute_ucb": null,
+      "mean_true_selected_cost": null,
+      "oracle_budget_safe_exists": true,
+      "risk_violation_ci95": [
+        0.0,
+        0.003682083896865671
+      ],
+      "risk_violation_count": 0,
+      "risk_violation_rate": 0.0
+    }
+  ],
+  "simulator": {
+    "K": 40,
+    "L": 5,
+    "oracle_seed": 12345,
+    "seed": 11
+  }
+}

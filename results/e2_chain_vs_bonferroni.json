@@ -1,0 +1,115 @@
+{
+  "description": "Synthetic E2 cost comparison and E7 p-value ablation",
+  "experiment": "e2_chain_vs_bonferroni",
+  "git_sha": "100342d94d5d22666b3f6ee28634ab016a2a7f0f",
+  "rows": [
+    {
+      "T": 2000,
+      "alpha": 0.1188475,
+      "delta": 0.1,
+      "feasible_count": 2000,
+      "feasible_rate": 1.0,
+      "mean_cost": 3.260311875,
+      "method": "chain",
+      "n": 1000,
+      "pvalue": "hb",
+      "true_violation_ci95": [
+        0.0109690613442208,
+        0.022512711955869413
+      ],
+      "true_violation_count": 32,
+      "true_violation_rate": 0.016
+    },
+    {
+      "T": 2000,
+      "alpha": 0.1188475,
+      "delta": 0.1,
+      "feasible_count": 2000,
+      "feasible_rate": 1.0,
+      "mean_cost": 3.344373406250001,
+      "method": "chain",
+      "n": 1000,
+      "pvalue": "hoeffding",
+      "true_violation_ci95": [
+        0.0,
+        0.0018427397934059364
+      ],
+      "true_violation_count": 0,
+      "true_violation_rate": 0.0
+    },
+    {
+      "T": 2000,
+      "alpha": 0.1188475,
+      "delta": 0.1,
+      "feasible_count": 2000,
+      "feasible_rate": 1.0,
+      "mean_cost": 3.3107020075000007,
+      "method": "holm",
+      "n": 1000,
+      "pvalue": "hb",
+      "true_violation_ci95": [
+        1.26588238685579e-05,
+        0.0027826398346589465
+      ],
+      "true_violation_count": 1,
+      "true_violation_rate": 0.0005
+    },
+    {
+      "T": 2000,
+      "alpha": 0.1188475,
+      "delta": 0.1,
+      "feasible_count": 2000,
+      "feasible_rate": 1.0,
+      "mean_cost": 3.4586893362500004,
+      "method": "holm",
+      "n": 1000,
+      "pvalue": "hoeffding",
+      "true_violation_ci95": [
+        0.0,
+        0.0018427397934059364
+      ],
+      "true_violation_count": 0,
+      "true_violation_rate": 0.0
+    },
+    {
+      "T": 2000,
+      "alpha": 0.1188475,
+      "delta": 0.1,
+      "feasible_count": 2000,
+      "feasible_rate": 1.0,
+      "mean_cost": 3.3262558062500003,
+      "method": "bonferroni",
+      "n": 1000,
+      "pvalue": "hb",
+      "true_violation_ci95": [
+        1.26588238685579e-05,
+        0.0027826398346589465
+      ],
+      "true_violation_count": 1,
+      "true_violation_rate": 0.0005
+    },
+    {
+      "T": 2000,
+      "alpha": 0.1188475,
+      "delta": 0.1,
+      "feasible_count": 2000,
+      "feasible_rate": 1.0,
+      "mean_cost": 3.4865762487500005,
+      "method": "bonferroni",
+      "n": 1000,
+      "pvalue": "hoeffding",
+      "true_violation_ci95": [
+        0.0,
+        0.0018427397934059364
+      ],
+      "true_violation_count": 0,
+      "true_violation_rate": 0.0
+    }
+  ],
+  "simulator": {
+    "K": 40,
+    "L": 5,
+    "oracle_seed": 12345,
+    "seed": 7
+  }
+}

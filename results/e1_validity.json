@@ -1,0 +1,183 @@
+{
+  "costliest_config_risk": 0.410255,
+  "description": "Synthetic E1 validity and E3 naive baseline",
+  "experiment": "e1_validity",
+  "git_sha": "100342d94d5d22666b3f6ee28634ab016a2a7f0f",
+  "risk_floor": 0.0388475,
+  "rows": [
+    {
+      "T": 3000,
+      "alpha": 0.0788475,
+      "chain": {
+        "feasible_count": 2578,
+        "feasible_rate": 0.8593333333333333,
+        "mean_cost": 3.509001934639256,
+        "violation_ci95": [
+          0.00020627153716225714,
+          0.0029196164652532663
+        ],
+        "violation_count": 3,
+        "violation_rate": 0.001
+      },
+      "delta": 0.05,
+      "n": 1000,
+      "naive": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 3.3829734633333333,
+        "violation_ci95": [
+          0.21634491509195783,
+          0.24684745416006743
+        ],
+        "violation_count": 694,
+        "violation_rate": 0.23133333333333334
+      }
+    },
+    {
+      "T": 3000,
+      "alpha": 0.0788475,
+      "chain": {
+        "feasible_count": 2734,
+        "feasible_rate": 0.9113333333333333,
+        "mean_cost": 3.492087894111193,
+        "violation_ci95": [
+          0.0005413766247848741,
+          0.003885122923253421
+        ],
+        "violation_count": 5,
+        "violation_rate": 0.0016666666666666668
+      },
+      "delta": 0.1,
+      "n": 1000,
+      "naive": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 3.3829734633333333,
+        "violation_ci95": [
+          0.21634491509195783,
+          0.24684745416006743
+        ],
+        "violation_count": 694,
+        "violation_rate": 0.23133333333333334
+      }
+    },
+    {
+      "T": 3000,
+      "alpha": 0.1188475,
+      "chain": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 3.2761979533333334,
+        "violation_ci95": [
+          0.003559741583024746,
+          0.009466070736543429
+        ],
+        "violation_count": 18,
+        "violation_rate": 0.006
+      },
+      "delta": 0.05,
+      "n": 1000,
+      "naive": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 3.1827469850000005,
+        "violation_ci95": [
+          0.33423581032283506,
+          0.36872126939089933
+        ],
+        "violation_count": 1054,
+        "violation_rate": 0.35133333333333333
+      }
+    },
+    {
+      "T": 3000,
+      "alpha": 0.1188475,
+      "chain": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 3.2615022650000003,
+        "violation_ci95": [
+          0.010392008791769719,
+          0.01925880827690243
+        ],
+        "violation_count": 43,
+        "violation_rate": 0.014333333333333333
+      },
+      "delta": 0.1,
+      "n": 1000,
+      "naive": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 3.1827469850000005,
+        "violation_ci95": [
+          0.33423581032283506,
+          0.36872126939089933
+        ],
+        "violation_count": 1054,
+        "violation_rate": 0.35133333333333333
+      }
+    },
+    {
+      "T": 3000,
+      "alpha": 0.1888475,
+      "chain": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 3.0237635408333334,
+        "violation_ci95": [
+          0.0030514415069187307,
+          0.008646586774220918
+        ],
+        "violation_count": 16,
+        "violation_rate": 0.005333333333333333
+      },
+      "delta": 0.05,
+      "n": 1000,
+      "naive": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 2.944045711666667,
+        "violation_ci95": [
+          0.28757105309627967,
+          0.32081200633595064
+        ],
+        "violation_count": 912,
+        "violation_rate": 0.304
+      }
+    },
+    {
+      "T": 3000,
+      "alpha": 0.1888475,
+      "chain": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 3.0107277191666664,
+        "violation_ci95": [
+          0.00813934528805122,
+          0.016188477580272847
+        ],
+        "violation_count": 35,
+        "violation_rate": 0.011666666666666667
+      },
+      "delta": 0.1,
+      "n": 1000,
+      "naive": {
+        "feasible_count": 3000,
+        "feasible_rate": 1.0,
+        "mean_cost": 2.944045711666667,
+        "violation_ci95": [
+          0.28757105309627967,
+          0.32081200633595064
+        ],
+        "violation_count": 912,
+        "violation_rate": 0.304
+      }
+    }
+  ],
+  "simulator": {
+    "K": 40,
+    "L": 5,
+    "oracle_seed": 12345,
+    "seed": 7
+  }
+}
