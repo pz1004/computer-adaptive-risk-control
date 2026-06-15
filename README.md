@@ -1,9 +1,10 @@
 # CARC — reference implementation
 
-Reference code for *Compute-Adaptive Risk Control: Distribution-Free Joint Guarantees for
-Early-Exit Networks*. It implements the certificates in the draft, reproduces the synthetic
-early-exit experiments (no GPU / no datasets needed), and provides the CIFAR-100 branchy-cache
-diagnostic reported in the manuscript.
+Reference code for *Compute-Adaptive Risk Control: Finite-Sample Certificates for Early-Exit
+and Cascade Inference*. It implements the certificates in the manuscript, reproduces the synthetic
+early-exit experiments (no GPU / no datasets needed), provides the preregistered digits
+tabular-cascade confirmation, and keeps the CIFAR-100 branchy-cache diagnostic reported in the
+manuscript.
 
 ## Install & run
 
@@ -17,6 +18,24 @@ python -m experiments.e6_shift_eta_sweep        # E6 covariate-shift eta-sensiti
 ```
 
 ## Real-data cache path
+
+The preregistered digits tabular-cascade confirmation reported in the IEEE Access manuscript was
+generated with:
+
+```bash
+python -m adapters.tabular_cascade \
+  --dataset digits \
+  --out cache/digits_tabular_cascade.npz \
+  --threshold-count 101 \
+  --seed 20260615
+
+python -m experiments.real_cache_eval \
+  --cache cache/digits_tabular_cascade.npz \
+  --out results/digits_tabular_real_cache_eval.json \
+  --alphas 0.05,0.10,0.15 --deltas 0.05,0.10 \
+  --calib-sizes 100,300 --T 1000 --seed 20260615 \
+  --pvalue hb --violation-denominator all
+```
 
 The CIFAR-100 branchy-cache diagnostic reported in the manuscript was generated with:
 
@@ -91,6 +110,8 @@ shift (d)  : downward-biased w_hat, eta=0.02 too small (*) FAILS  ->  violation 
 CIFAR      : pre-registered alpha<=0.30 grid has no safe full-pool config (min risk 0.3055);
              exploratory alpha=0.35/0.40 chain violation 0.012-0.038 <= delta,
              naive violation 0.441-0.529
+DIGITS     : pre-registered alpha=0.10 grid is feasible; chain violation 0.002-0.018 <= delta,
+             naive violation 0.486-0.571 with a 5.14-6.09 relative-cost discount
 ```
 
 ## Honest caveats (what the demo does and does not show)
@@ -106,10 +127,11 @@ CIFAR      : pre-registered alpha<=0.30 grid has no safe full-pool config (min r
   the estimator error; (c) exact weights are the efficiency ceiling; and (d) a **deliberately
   downward-biased** estimator with `eta` set too small (so (⋆) fails) **breaches** the target at
   ~0.895 >> delta — the honest failure mode.
-- **Synthetic plus one CIFAR diagnostic.** `EarlyExitSim` is a controllable stand-in where
-  ground-truth risk/cost are available for violation checking. The CIFAR-100 branchy run uses
-  held-out test-pool risk as a finite-pool proxy, not population truth, and its pre-registered
-  target grid is mostly infeasible because the final-exit risk is 0.3055.
+- **Synthetic plus two real-cache checks.** `EarlyExitSim` is a controllable stand-in where
+  ground-truth risk/cost are available for violation checking. The digits tabular cascade is the
+  positive feasible-target cache confirmation. The CIFAR-100 branchy run uses held-out test-pool
+  risk as a finite-pool proxy, not population truth, and its pre-registered target grid is mostly
+  infeasible because the final-exit risk is 0.3055.
 ```
 adapters/     cifar_branchy.py
 carc/         pvalues.py  certify.py  selector.py  simulate.py  chain.py

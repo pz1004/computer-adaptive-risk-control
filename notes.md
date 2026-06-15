@@ -1,4 +1,4 @@
-# Notes: Complete TMLR Draft
+# Notes: CARC Manuscript Venue Retargeting
 
 ## Sources To Inspect
 - `completion_guide.md`
@@ -92,3 +92,54 @@
 - Ran theorem-tag check for `(P1)`, `(P2)`, `(1)`, `(2)`, `(3)`, `($\star$)`, and `(MP)`.
 - Ran `pdftotext main.pdf -` spot check: the PDF begins with `Anonymous authors / Paper under double-blind review`, `References` appears before `Proofs`, and `Extended experimental detail` appears after the proof appendix.
 - Ran whitespace and `git diff --check`; no trailing whitespace or diff-check errors.
+
+## IEEE Access Retargeting Ledger
+- Current target changed from TMLR to IEEE Access Research Article.
+- Official IEEE Access submission guidance checked on 2026-06-15: double-column single-spaced IEEE Access template, source plus matching PDF, source/PDF author list, all-author biographies below references, 3--10 keywords, acronym definitions, grammar review, accurate non-retracted references, and a strong recommendation to keep the article under 20 pages unless justified.
+- Current `main.tex` is still TMLR-specific at the start of this pass: `\usepackage{tmlr}`, anonymous/no-author PDF, TMLR reproducibility checklist, planned-protocol framing, and a 24-page TMLR-layout PDF.
+- IEEE Access evidence-first retargeting needs one feasible real-cache confirmation study beyond the current CIFAR diagnostic, because the CIFAR pre-registered grid is mostly infeasible and the feasible CIFAR cells are exploratory.
+- Implementation decision for this pass: add a tabular real-cache benchmark using a real sklearn dataset and a staged classifier cascade, writing cache/result artifacts with the existing loss/cost matrix interface. Do not edit `carc/` for this.
+- `preregistration.md`: added the IEEE Access confirmatory digits tabular cascade block before running the new result artifact.
+- `adapters/tabular_cascade.py`: added a three-exit sklearn cascade cache builder using `load_digits`; exits are GaussianNB, standardized logistic regression, and standardized RBF SVC with relative cost proxy `[1, 4, 12]`.
+- Corrected the tabular adapter to clip exact confidence scores below `1.0` so threshold `1` is the always-final policy expected by the chain convention.
+- `cache/digits_tabular_cascade.npz`: built with seed `20260615`, 898 train examples, 899 cache examples, 64 features, 10 classes, exit accuracies `[0.8631813125695217, 0.967741935483871, 0.9810901001112347]`, and final/full-pool minimum risk `0.018909899888765295`.
+- `results/digits_tabular_real_cache_eval.json`: pre-registered grid used `alpha={0.05,0.10,0.15}`, `delta={0.05,0.10}`, calibration sizes `{100,300}`, `T=1000`, HB p-values, and violation denominator `all`. Chain violation range was `0.000-0.051`, never exceeding its matching `delta`; naive violation peaked at `0.571`. Chain feasibility ranged `0.139-1.000`.
+
+## IEEE Manuscript Conversion Ledger
+- `main.tex`: converted from `\usepackage{tmlr}` anonymous review source to `\documentclass{ieeeaccess}` with IEEE Access metadata fields, keywords, author/affiliation/ORCID placeholders, correspondence placeholder, acknowledgment/funding/AI-disclosure placeholder, author biography placeholder, and `IEEEtran` bibliography style.
+- `main.tex`: reframed the paper as an IEEE Access Research Article about certified threshold selection for adaptive inference systems under finite calibration data.
+- `main.tex`: added the digits tabular-cascade real-cache confirmation as Section 10.2 and Table 1; retained CIFAR-100 as Section 10.3 diagnostic negative/feasibility evidence.
+- `main.tex`: removed TMLR checklist/broader-impact wording and replaced it with `Engineering and deployment considerations` and `Data and code availability`.
+- `main.tex`: converted `\citet`/`\citep` to IEEE-compatible `\cite` commands and verified 19 cited keys match 19 BibTeX entries with no missing or unused keys.
+- `main.tex`: fixed the P0 guarantee wording: if no configuration certifies, the procedure reports infeasibility and no risk guarantee is attached to any operational fallback unless that fallback separately certifies.
+- `main.tex`: added guarded compatibility definitions for `\xfigwd`, `biography`, and `\if@biographyTOCentrynotmade` because the available IEEE Access mirror used for a temporary syntax build references those symbols before defining them under Tectonic/XeTeX.
+- `README.md`: added exact digits cache/evaluator reproduction commands and representative output for the feasible real-cache confirmation.
+- `completion_guide.md`: retargeted submission gates from TMLR to IEEE Access requirements.
+- `main.pdf`: replaced the old 24-page TMLR-layout PDF with an 18-page IEEE-style PDF generated in a temporary build directory. The build used a downloaded IEEE Access mirror plus temporary XeTeX compatibility edits outside the repo because official/CTAN shell downloads were blocked and the local repo lacks `ieeeaccess.cls`.
+
+## IEEE Retargeting Verification
+- Re-ran `python -m experiments.real_cache_eval --cache cache/digits_tabular_cascade.npz --out results/digits_tabular_real_cache_eval.json --alphas 0.05,0.10,0.15 --deltas 0.05,0.10 --calib-sizes 100,300 --T 1000 --seed 20260615 --pvalue hb --violation-denominator all`; it reproduced the 48-row artifact.
+- Validated `results/digits_tabular_real_cache_eval.json` with `python -m json.tool`; chain max violation is `0.051` and no chain row exceeds its matching `delta`.
+- Ran `python -m tests.test_carc`; all tests passed.
+- Ran `python -m py_compile adapters/tabular_cascade.py experiments/real_cache_eval.py`; no syntax errors.
+- Ran `git diff --check`; no whitespace errors.
+- Ran source and PDF venue-marker checks: no `TMLR`, `tmlr`, `anonymous`, `double-blind`, `\citet`, `\citep`, `Reproducibility checklist`, or `Broader impact` markers remain in `main.tex`, `README.md`, `completion_guide.md`, or extracted `main.pdf` text.
+- Ran `pdfinfo main.pdf`; rebuilt artifact is 18 pages.
+- Ran `tectonic --keep-logs --keep-intermediates main.tex` in the repo; it fails at `main.tex:2` because `ieeeaccess.cls` is not installed locally. This is the remaining template dependency, not a manuscript syntax failure.
+
+## Editorial Rewrite Ledger
+- `main.tex`: rewrote the title, abstract, introduction, contributions, relation-to-LTT discussion, related work, implementation overview, experiment narrative, limitations, engineering considerations, data/code statement, and conclusion for a more precise IEEE Access Research Article framing.
+- `main.tex`: sharpened the problem statement around certified threshold selection under finite calibration data, separated validity from feasibility and efficiency, and kept the empirical claims tied to the controlled simulation, digits real-cache confirmation, and CIFAR-100 diagnostic.
+- `main.tex`: down-modulated broad claims by stating that the work does not claim state-of-the-art backbone accuracy, does not validate larger ImageNet or language deployments, and treats shift certification as a sensitivity result requiring a supplied weight-error budget.
+- `main.tex`: preserved mathematical notation, displayed equations, theorem/proof structure, citation keys, labels, algorithmic blocks, tables, and reported numeric evidence while editing the surrounding prose.
+- `main.tex`: added `\vol{14}` and `\Year{2026}` after verifying that IEEE Access volume 14 corresponds to 2026; the temporary build mirror also needed a non-repo footer patch because its non-JTEHM branch hard-coded `2016`.
+- `README.md`: updated the descriptive manuscript title to `Compute-Adaptive Risk Control: Finite-Sample Certificates for Early-Exit and Cascade Inference`.
+
+## Editorial Rewrite Verification
+- Ran citation-key validation after the rewrite: `main.tex` cites 19 keys, `main.bib` contains 19 entries, with no missing or unused keys.
+- Rebuilt `main.pdf` from the edited source in `/tmp/carc-ieee-build`; the build succeeded and the copied PDF is 18 pages.
+- Extracted `main.pdf` text with `pdftotext`; the PDF begins with the revised title and uses `VOLUME 14, 2026`.
+- Ran source/PDF stale-marker checks: no old title, `TMLR`, `tmlr`, `anonymous`, `double-blind`, `\citet`, `\citep`, `[CITATION NEEDED]`, `planned protocol`, `remaining protocol`, or `VOLUME 4, 2016` markers remain in `main.tex`, `README.md`, `completion_guide.md`, or extracted PDF text.
+- Ran style-marker checks: no `groundbreaking`, `revolutionary`, `silently`, `honest`, `turnkey`, `obvious`, or standalone `very` markers remain in `main.tex` or extracted PDF text.
+- Ran `python -m tests.test_carc`; all tests passed.
+- Ran `git diff --check`; no whitespace errors.
