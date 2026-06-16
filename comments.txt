@@ -1,0 +1,13 @@
+  1. Scrub the "When Run" Clause: Completely delete the sentence: "Remaining ImageNet, language-cascade,          
+  corruption-suite, and weight-estimation details will be tabulated when those studies are run." You have already
+  appropriately relegated these topics to "Future Work" in the Conclusion; do not imply they are missing tables
+  from the current draft.
+  2. Standardize Terminology: Replace all instances of "preregistered target grid" and "preregistered protocol"
+  with standard IEEE engineering phrasing, such as "pre-defined target grid," "fixed target grid," or
+  "standardized evaluation protocol."
+  3. Formalize the Appendices: Rename Section 11 ("Extended experimental detail") to be a formal Appendix, and
+  structurally move it to the end of the document (after the Conclusion and References) using the proper IEEE     
+  \appendices  command, ensuring it aligns with the formatting guidelines.
+  4. Elevate the Tone of Section 6: Remove the apology that Section 6 is a "secondary, conservative extension."
+  Instead, confidently frame it as a "formal sensitivity analysis framework that establishes the theoretical
+  boundaries of shift-robustness."

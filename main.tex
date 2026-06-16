@@ -2,11 +2,9 @@
 
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
-\input{math_commands.tex}
 \usepackage{amsthm}
 \usepackage{mathtools}
 \usepackage{booktabs}
-\usepackage{longtable}
 \usepackage{graphicx}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
@@ -17,22 +15,13 @@
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \providecommand{\xfigwd}{0pt}
-\makeatletter
-\@ifundefined{c@biography}{\newcounter{biography}}{}
-\@ifundefined{if@biographyTOCentrynotmade}{%
-  \newif\if@biographyTOCentrynotmade
-  \@biographyTOCentrynotmadetrue
-}{}
-\makeatother
 
 \begin{document}
 
-\history{Date of current version June 15, 2026.}
-\doi{10.1109/ACCESS.2026.DOI}
-\vol{14}
-\Year{2026}
+\history{}
+\doi{}
 
-\title{Compute-Adaptive Risk Control: Finite-Sample Certificates for Early-Exit and Cascade Inference}
+\title{Compute-Adaptive Risk Control: A Finite-Sample Calibration Layer for Early-Exit and Cascade Inference}
 
 \author{\uppercase{Sooyoung Jang}\authorrefmark{1},
 \uppercase{Sungpil Woo}\authorrefmark{1}, and
@@ -42,34 +31,35 @@
 Daejeon 34158, Republic of Korea (e-mail: syjang@hanbat.ac.kr; woosungpil@hanbat.ac.kr)}
 \address[2]{Department of Intelligent Media Engineering, Hanbat National University,
 Daejeon 34158, Republic of Korea (e-mail: ahyun@hanbat.ac.kr)}
+\tfootnote{This research was supported by the Regional Innovation System \& Education (RISE) program through the Daejeon RISE Center, funded by the Ministry of Education (MOE) and Daejeon Metropolitan City, Republic of Korea (2026-RISE-06-002).}
 
 \markboth
-{S. Jang \headeretal Compute-Adaptive Risk Control}
-{S. Jang \headeretal Compute-Adaptive Risk Control}
+{S. Jang \headeretal{} Compute-Adaptive Risk Control}
+{S. Jang \headeretal{} Compute-Adaptive Risk Control}
 
 \corresp{Corresponding authors: Sungpil Woo (e-mail: woosungpil@hanbat.ac.kr) and Ahyun Lee (e-mail: ahyun@hanbat.ac.kr).}
 
 
 \begin{abstract}
-Adaptive inference systems---early-exit networks and model cascades---cut average computation by letting inputs terminate early, but their thresholds are usually chosen by inspecting a validation set. That step provides no finite-sample certificate that deployment risk stays below a target, because the same data both screen the candidate thresholds and pick the deployed policy. This paper studies \emph{compute-adaptive risk control} (CARC): threshold selection over a fixed, compute-ordered candidate family with the guarantee that the selected policy satisfies $R(\tau)\le\alpha$ with probability at least $1-\delta$ over the calibration draw. CARC instantiates Learn-then-Test with family-wise error control and contributes (i) a cost characterization for fixed-sequence certification on compute chains, (ii) a joint risk--compute certificate for pre-committed budgets, (iii) an estimated-weight sensitivity certificate for covariate shift, and (iv) a deployment discipline that separates validity from feasibility---reporting \emph{infeasibility} rather than attaching a guarantee to an uncertified fallback. A controlled simulation with oracle risks confirms the certificate while uncorrected tuning violates at far higher rates; a preregistered scikit-learn digits cascade confirms the procedure on a feasible real cache, where naive tuning still violates the target in up to $57\%$ of trials; and a CIFAR-100 branchy cache documents correct infeasibility reporting where the trained model cannot meet its targets but naive tuning would deploy an unsafe policy.
+Adaptive-inference systems---early-exit networks and model cascades---reduce average computation by terminating easy inputs before the most expensive model path. Their exit thresholds are commonly selected by validation-set inspection, but the selected policy is data-dependent: the same calibration sample screens the candidates and chooses the deployed threshold, so empirical acceptability does not imply finite-sample control of deployment risk. We study \emph{compute-adaptive risk control} (CARC), a finite-family calibration layer for a fixed adaptive model. Given a risk target $\alpha$, an error probability $\delta$, and a compute-ordered candidate family, CARC returns a certified threshold policy satisfying $R(\tau)\le\alpha$ with probability at least $1-\delta$ over the calibration draw, or reports that no candidate certifies. The statistical reduction to hypothesis testing is inherited from Learn-then-Test; the additional contributions are (i) a finite-sample cost characterization for fixed-sequence certification on compute chains, (ii) a multi-chain selector that searches several pre-specified per-exit chains with chain-level error allocation, (iii) a joint risk--compute certificate for pre-committed budgets, (iv) an estimated-weight sensitivity certificate for covariate shift, and (v) explicit deployment semantics that separate risk validity from target feasibility. The evidence is scoped to the implemented caches and simulations. In controlled simulation with oracle risks, certified selection stays below the tested violation levels while uncorrected validation tuning violates at $0.231$--$0.351$. In a six-chain synthetic experiment, multi-chain CARC keeps true violation at $0$--$0.001$ and lowers cost relative to Holm and Bonferroni in every tested cell. Real-cache studies on digits, breast-cancer, CIFAR-10, and CIFAR-100 show that richer pre-specified chains can reduce certified compute when feasible policies exist, while the same procedure reports infeasibility when the trained model cannot meet the requested target.
 \end{abstract}
 
 \begin{keywords}
 Adaptive inference, calibration, early-exit networks, finite-sample guarantees, risk control, statistical learning.
 \end{keywords}
 
-\titlepgskip=-15pt
+\titlepgskip=-21pt
 \maketitle
 
 \section{Introduction}
 
-Adaptive-depth inference --- early-exit networks, cascades, and routers --- trades accuracy for latency, energy, and operating cost by allowing inputs to terminate before the most expensive model path. The usual deployment procedure is straightforward: train the adaptive model, evaluate candidate thresholds on held-out data, and deploy the cheapest threshold whose empirical risk appears acceptable. The missing step is statistical certification after threshold selection. Because the same calibration statistic is used both to screen candidates and to choose the deployed policy, the selected threshold can have true risk above the target even when its empirical risk is below the target. A second gap is operational: when no threshold is safe for the trained system and target, the procedure should report infeasibility rather than returning a policy whose risk status is unknown.
+Adaptive-depth inference---early-exit networks, cascades, and routers---reduces average compute by allowing inputs to terminate before the most expensive model path. The standard deployment workflow trains the adaptive model, evaluates candidate thresholds on held-out data, and deploys the cheapest threshold whose empirical risk appears acceptable. This workflow is statistically incomplete. Threshold selection is a post-selection operation: the calibration sample is used both to screen candidate policies and to select the deployed policy. Consequently, a threshold with empirical risk below $\alpha$ can have true risk above $\alpha$. The same workflow also lacks a formal outcome for target infeasibility; when no candidate is safe for the trained system and requested risk level, returning an uncertified fallback obscures the failure mode.
 
-This paper asks a specific question: \textbf{given a fixed adaptive inference system, a finite calibration set, a risk target $\alpha$, and an error probability $\delta$, can one select a compute-efficient threshold policy while controlling the probability of deploying an unsafe policy?} We answer this question by instantiating the Learn-then-Test (LTT) framework for compute-ordered threshold families \cite{angelopoulos2025learn}. The reduction from risk control to hypothesis testing is inherited from LTT; the contribution here is to connect that reduction to the structure of adaptive inference, where candidate policies are naturally ordered by compute and where infeasibility must be visible to an operator.
+We study the following finite-sample problem: \textbf{given a fixed adaptive inference system, a finite calibration set, a risk target $\alpha$, and an error probability $\delta$, select a low-compute threshold policy while controlling the probability of deploying an unsafe policy.} CARC solves this problem by instantiating Learn-then-Test (LTT) for finite, compute-ordered threshold families \cite{angelopoulos2025learn}. The LTT reduction supplies valid p-values and family-wise error control; the adaptive-inference structure supplies the candidate order, the compute objective, and the need for an explicit infeasibility report. Relative to uncorrected validation tuning, CARC replaces empirical acceptability with a finite-sample post-selection risk certificate. Relative to other valid selectors, CARC does not promise order-of-magnitude savings; its contribution is to align the testing order and deployment objective, then quantify the remaining efficiency cost.
 
-The empirical objective is correspondingly narrow. We do not claim state-of-the-art accuracy for any backbone. Instead, we test whether the certificate controls the frequency of unsafe selections, quantify the compute premium relative to uncorrected validation tuning, and record infeasibility when the trained system cannot meet the target. In the controlled simulation, where oracle risks are available, the certified chain stays below the tested violation levels while the invalid naive policy violates at $0.231$--$0.351$. In the preregistered digits real-cache study, the final exit is below the target grid before calibration and the chain again stays within the tested violation levels; at $\alpha=0.10$, naive validation inspection violates at $0.486$--$0.571$. The CIFAR-100 branchy-cache run is intentionally reported as a diagnostic feasibility case: the preregistered targets are mostly infeasible because the minimum full-pool chain risk is $0.3055$, and the feasible-target cells are exploratory.
+The empirical objective is therefore calibration-specific rather than model-accuracy-specific. We do not claim state-of-the-art backbone accuracy. We test whether certified selection controls unsafe-output frequency, measure the compute premium of certification relative to uncorrected validation tuning, and expose infeasibility when the trained model cannot meet the requested target. In the fixed-grid digits real-cache study, the final exit is below the target grid before calibration and the certified chain stays within the tested violation levels; at $\alpha=0.10$, naive validation inspection violates at $0.486$--$0.571$. A CIFAR-10 branchy cache provides a feasible neural-cache check: for $n_{\mathrm{cal}}=2000$ and $\alpha=0.15$--$0.30$, multi-chain CARC selects in $0.956$--$1.000$ of trials, keeps held-out violation at $0.001$--$0.017$, and is cheaper than scalar-chain CARC in all tested cells. The CIFAR-100 branchy-cache run is a feasibility diagnostic: the pre-defined targets are mostly infeasible because the minimum full-pool chain risk is $0.3055$, and the feasible-target cells are exploratory.
 
-\textbf{Scope of evidence.} The guarantees in Sections~3--6 are proved in Appendix A. The $1-\delta$ behavior and the failure mode of naive tuning are verified in a controlled simulation with oracle risks (Section~10.1). A preregistered tabular real-cache study on the scikit-learn digits data gives the positive real-cache confirmation (Section~10.2); because CARC operates only on cached scores, losses, and costs, this non-neural staged cascade exercises the calibration layer end-to-end on a feasible target grid without standing in for a deep early-exit network. The CIFAR-100 branchy network is the neural early-exit case, used to stress infeasibility reporting (Section~10.3). Larger ImageNet, language-cascade, and real-shift deployments are future work rather than evidence for the present claims.
+\textbf{Scope of evidence.} The guarantees in Sections~3--6 are proved in Appendix A. Controlled simulation with oracle risks verifies the $1-\delta$ behavior and isolates the failure mode of naive post-selection tuning. A multi-chain simulation then tests whether a richer pre-specified family improves certified efficiency without losing validity. Real-cache studies on scikit-learn digits and breast-cancer data exercise the cache evaluator on feasible target grids; these staged tabular cascades validate the calibration layer, not deep-network accuracy. CIFAR-10 supplies a feasible neural early-exit cache. CIFAR-100 tests the opposite regime: a weaker branchy model whose requested targets mostly lie below the finite-pool risk frontier. Larger ImageNet-scale early-exit networks, language cascades, measured latency, and non-synthetic shift remain outside the evidence base of this submission.
 
 Figure~\ref{fig:pipeline} summarizes the deployment logic before the formal notation. The model is fixed before calibration; CARC uses the calibration cache only to certify a pre-specified chain, while the naive branch inspects the same cache without a family-wise risk certificate.
 
@@ -82,22 +72,23 @@ Figure~\ref{fig:pipeline} summarizes the deployment logic before the formal nota
 
 \subsection{Contributions}
 
-The reduction "risk control = multiple testing" and the admissibility of fixed-sequence and graphical tests are due to LTT and the multiple-testing literature. This paper contributes the following components.
+The reduction "risk control = multiple testing" and the admissibility of fixed-sequence and graphical tests are due to LTT and the multiple-testing literature; Table~\ref{tab:ltt-delta} separates inherited machinery from the new compute-adaptive specialization. The contribution of this paper is a calibration-and-deployment layer for compute-adaptive inference, with the following components.
 
 \begin{enumerate}
 \item \textbf{Finite-family formulation for adaptive inference.} We cast threshold selection for early-exit and cascade policies as risk control over a finite, compute-ordered candidate family. The formulation applies to any bounded loss $\ell_{\mathrm{loss}}\in[0,1]$, including 0--1 error, selective risk, and class-conditional error rates.
 \item \textbf{Cost characterization for fixed-sequence certification.} The validity guarantee is inherited from LTT and carries no chain-length penalty. The new statement in Theorem 2(b) is an efficiency characterization: under a monotone-risk condition, the selected policy lies within a finite-sample boundary band of the cheapest safe policy in the chosen chain, with width $\Delta_n=O(\sqrt{\ln(K/\delta)/n})$.
+\item \textbf{Multi-chain selector for richer policy families.} We extend the one-dimensional scalar-threshold chain to several pre-specified per-exit threshold chains. The procedure runs fixed-sequence testing within each chain at an allocated level, unions the certified sets, and controls FWER by a chain-level union bound. This searches more policies than the scalar chain while avoiding the full $\delta/K$ penalty of Bonferroni when the number of chains is much smaller than the number of configurations.
 \item \textbf{Joint risk--compute certificate.} Theorem 3 certifies $R(\tau)\le\alpha$ and $C(\tau)\le B$ for settings where a compute budget must be fixed before deployment. The risk certificate remains the primary guarantee; the compute certificate is a conservative pre-commitment device rather than a substitute for measuring realized latency.
 \item \textbf{Estimated-weight shift certificate.} Theorem 4 gives a finite-sample sufficient condition under covariate shift when importance weights are estimated on a separate fold and an $L^1$ error budget $\eta$ is supplied. The result is a sensitivity certificate: validity depends on the correctness of the budget, and feasibility can degrade as $\eta$ increases.
-\item \textbf{Certify-or-report-infeasibility deployment discipline.} We separate three quantities that validation tuning conflates---risk validity, feasibility of the target for the trained system, and compute efficiency---and require the procedure to report \emph{infeasibility} rather than attach a risk guarantee to an uncertified fallback. The CIFAR-100 study is included as a documented instance of this discipline under stress: where no preregistered target admits a safe configuration, CARC certifies nothing and reports infeasibility, whereas uncorrected validation tuning selects an unsafe policy in $28$--$46\%$ of trials and violates the target in exactly those trials. Reporting this negative outcome faithfully is part of the contribution, not a shortfall of it.
-\item \textbf{Implementation and validation.} The reference implementation covers the p-values, certification procedures, selectors, and cache evaluators. Experiments verify the guarantee in a simulation with oracle risks, confirm the real-cache procedure on a feasible digits cascade, and document infeasibility reporting on a CIFAR-100 branchy cache whose preregistered targets are mostly unattainable.
+\item \textbf{Certify-or-report-infeasibility deployment discipline.} We separate three quantities that validation tuning conflates---risk validity, target feasibility for the trained system, and compute efficiency---and require \emph{infeasibility} rather than an uncertified fallback when no candidate certifies. The CIFAR-100 study documents this behavior under a weak branchy model: CARC certifies no policy when no pre-defined target admits a safe configuration, whereas uncorrected validation tuning selects unsafe policies in $28$--$46\%$ of trials and violates the target in exactly those trials.
+\item \textbf{Implementation and validation.} The reference implementation covers the p-values, certification procedures, selectors, threshold-family builders, and cache evaluators. Experiments verify the guarantee in simulation with oracle risks, evaluate the multi-chain redesign in synthetic and real-cache settings, confirm feasible-cache behavior on tabular cascades and a CIFAR-10 branchy cache, and document infeasibility reporting on a CIFAR-100 branchy cache whose pre-defined targets are mostly unattainable.
 \end{enumerate}
 
 \subsection{Relation to Learn-then-Test}
 
 \emph{Borrowed.} From LTT \cite{angelopoulos2025learn} and the multiple-testing literature \cite{holm1979simple,wiens2003fixed,bretz2008graphical}, we use the reduction from risk control to testing nulls $H_\tau:R(\tau)>\alpha$, valid concentration p-values, and family-wise error rate (FWER) procedures for finite hypothesis families. The Hoeffding--Bentkus and empirical-Bernstein p-values are also standard ingredients \cite{hoeffding1963probability,bentkus2004hoeffding,maurer2009empirical}.
 
-\emph{New.} We specialize this machinery to adaptive inference and analyze what the compute order buys. Theorem 2(b) characterizes the efficiency loss of fixed-sequence certification on an exit/cascade chain; Theorem 3 adds a conservative joint risk--compute certificate for pre-committed budgets; Theorem 4 gives an estimated-weight sufficient condition for covariate shift; and the implementation evaluates these claims with controlled simulation, digits real-cache confirmation, and CIFAR-100 feasibility diagnostics. The contribution is therefore not a new multiple-testing method, but a calibrated threshold-selection methodology for compute-adaptive inference. When the chain order is doubtful, we implement Holm's step-down procedure \cite{holm1979simple}; the graphical family in \cite{bretz2008graphical} is a broader unimplemented option.
+\emph{New.} We specialize this machinery to adaptive inference and analyze the effect of a compute-ordered candidate family. Theorem 2(b) characterizes the efficiency loss of fixed-sequence certification on an exit/cascade chain; the multi-chain selector below searches several pre-specified per-exit chains with a chain-level error split; Theorem 3 adds a conservative joint risk--compute certificate for pre-committed budgets; Theorem 4 gives an estimated-weight sufficient condition for covariate shift; and the implementation evaluates these claims with controlled simulation, multi-chain redesign experiments, feasible real-cache confirmations, and CIFAR branchy-cache diagnostics. The contribution is a calibrated threshold-selection methodology, not a new p-value. When the chain order is doubtful, we implement Holm's step-down procedure \cite{holm1979simple}; the graphical family in \cite{bretz2008graphical} is a broader unimplemented option.
 
 \begin{table}[t]
 \centering
@@ -113,6 +104,7 @@ Risk control $=$ multiple testing & Borrowed & Foundation \\
 Concentration p-values (Hoeffding, HB, emp.\ Bernstein) & Borrowed & Per-config tests \\
 FWER rules (Bonferroni, fixed-sequence, Holm) & Borrowed & Certification \\
 Compute-ordered chain from exit structure & New & Supplies test order \\
+Several pre-specified chains & New & Richer selector \\
 Two-sided cost bound (Th.~2(b)) & New & Efficiency band \\
 Joint risk--compute certificate (Th.~3) & New & Pre-committed budget \\
 Estimated-weight shift certificate (Th.~4) & New & Shift sensitivity \\
@@ -146,9 +138,12 @@ Examples of $\ell_{\mathrm{loss}}$: 0--1 error $\mathbf 1\{\hat Y_\tau\ne Y\}$; 
 \textbf{Calibration data.} We observe $n$ i.i.d. draws $\mathcal D=\{(X_i,Y_i)\}_{i=1}^n\sim P$, disjoint from training. Define empirical estimates
 
 \[
-\hat R(\tau)=\frac1n\sum_{i=1}^n \ell_{\mathrm{loss}}(\hat Y_\tau(X_i),Y_i),
-\qquad
-\hat C(\tau)=\frac1n\sum_{i=1}^n c_{E_\tau(X_i)}.
+\begin{aligned}
+\hat R(\tau)
+&=\frac1n\sum_{i=1}^n \ell_{\mathrm{loss}}(\hat Y_\tau(X_i),Y_i),\\
+\hat C(\tau)
+&=\frac1n\sum_{i=1}^n c_{E_\tau(X_i)}.
+\end{aligned}
 \]
 
 \textbf{Goal.} Given target risk $\alpha\in(0,1)$ and confidence level $\delta\in(0,1)$, return $\hat\tau$ (a measurable function of $\mathcal D$) such that
@@ -254,9 +249,12 @@ Define the cheapest truly-safe index $k_0:=\min\{k:R(\tau^{(k)})\le\alpha\}$.
 \emph{(b) Cost bound (our contribution).} On the validity event the output never undercuts the safe frontier: $C(\hat\tau)\ge\min_{k:R(\tau^{(k)})\le\alpha}C(\tau^{(k)})$, and under Assumption M this means $k^\star\ge k_0$. For the other direction, let
 
 \[
-\Delta_n:=\epsilon_n(\delta)+\epsilon_n(\delta/K)=O\!\Big(\sqrt{\tfrac{\ln(K/\delta)}{n}}\Big),
-\qquad
-k_1:=\min\{k:\ R(\tau^{(j)})\le\alpha-\Delta_n\ \text{for all}\ j\ge k\}.
+\begin{aligned}
+\Delta_n&:=\epsilon_n(\delta)+\epsilon_n(\delta/K)
+  =O\!\Big(\sqrt{\tfrac{\ln(K/\delta)}{n}}\Big),\\
+k_1&:=\min\{k:\ R(\tau^{(j)})\le\alpha-\Delta_n
+  \ \text{for all}\ j\ge k\}.
+\end{aligned}
 \]
 
 Then $\Pr(k^\star\le k_1)\ge1-\delta$. Combining, on an event of probability $\ge1-2\delta$,
@@ -272,14 +270,20 @@ so the excess compute of the certified policy over the cheapest safe policy in t
 (b) \emph{Lower bound.} $\hat\tau$ is certified, hence safe on the validity event, so its compute is at least that of the cheapest safe configuration; under Assumption M the safe set is the suffix $\{k\ge k_0\}$ and compute is increasing in $k$, giving $k^\star\ge k_0$. \emph{Upper bound.} The walk reaches index $k_1$ iff every config in $\{k_1,\dots,K\}$ certifies, i.e. $\hat R(\tau^{(j)})\le\alpha-\epsilon_n(\delta)$ for all $j\ge k_1$. For any such $j$, $R(\tau^{(j)})\le\alpha-\Delta_n=\alpha-\epsilon_n(\delta)-\epsilon_n(\delta/K)$, so
 
 \[
-\Pr\big(\hat R(\tau^{(j)})>\alpha-\epsilon_n(\delta)\big)\le\Pr\big(\hat R(\tau^{(j)})-R(\tau^{(j)})>\epsilon_n(\delta/K)\big)\le e^{-2n\,\epsilon_n(\delta/K)^2}=\delta/K
+\begin{aligned}
+&\Pr\big(\hat R(\tau^{(j)})>\alpha-\epsilon_n(\delta)\big)\\
+&\quad\le
+\Pr\big(\hat R(\tau^{(j)})-R(\tau^{(j)})
+  >\epsilon_n(\delta/K)\big)\\
+&\quad\le e^{-2n\,\epsilon_n(\delta/K)^2}=\delta/K
+\end{aligned}
 \]
 
 by the upper-tail Hoeffding inequality. A union bound over the at most $K$ such indices gives $\Pr(\exists j\ge k_1:\ \hat R(\tau^{(j)})>\alpha-\epsilon_n(\delta))\le\delta$, i.e. $\Pr(k^\star\le k_1)\ge1-\delta$. Intersecting with the validity event and a union bound yields the sandwich with probability $\ge1-2\delta$. $\square$
 
-The structure of the bound is the central payoff: \textbf{validity carries no $K$-penalty} (part a), while the \textbf{price of searching a length-$K$ chain is an $O(\sqrt{\ln K/n})$ band on efficiency} (part b). This is why early stopping matters and why we do \emph{not} claim exact recovery of $k_0$: a safe configuration sitting within $\Delta_n$ of the boundary may fail to certify and halt the walk, returning a slightly more expensive policy --- but never an unsafe one. Versus Bonferroni over the same grid, the chain's per-test level is $\delta$ rather than $\delta/K$, which tightens $\epsilon_n(\delta)$ and shrinks the band; the gain is LTT's, realized here because the compute order supplies the chain for free.
+The structure of the bound is the main theoretical distinction: \textbf{validity carries no $K$-penalty} (part a), while the \textbf{cost of searching a length-$K$ chain appears as an $O(\sqrt{\ln K/n})$ efficiency band} (part b). Early stopping is therefore a validity device, not an exact optimizer. A safe configuration within $\Delta_n$ of the boundary may fail to certify and halt the walk, returning a more expensive certified policy, but not an unsafe one. Relative to Bonferroni over the same grid, the chain uses per-test level $\delta$ rather than $\delta/K$, which tightens $\epsilon_n(\delta)$ and shrinks the band; this advantage follows from LTT once the adaptive-inference system supplies a fixed compute order.
 
-\textbf{How large is the chain-vs-Bonferroni gain, in practice?} Often small. The advantage enters only through the \emph{difference} between $\epsilon_n(\delta)$ and $\epsilon_n(\delta/K)$, i.e. $\sqrt{\ln(1/\delta)/2n}$ vs. $\sqrt{\ln(K/\delta)/2n}$, which is modest unless $K$ is large or $n$ small (in our controlled simulation, Section~10.1, the certified-compute gap between chain and Bonferroni is a few percent). The bound therefore supports a narrower interpretation: fixed-sequence testing removes the chain-length penalty from validity and can reduce the efficiency band relative to Bonferroni, but the realized compute premium over an invalid naive selector is empirical and must be reported for each model, target, and chain. In short, the chain buys two things: zero chain-length penalty on \emph{validity}, and an operationally meaningful expensive-to-cheap order aligned with the deployment objective. It does \emph{not} promise large compute savings over other \emph{valid} selectors such as Holm; the large compute gaps reported in Section~10 are against the \emph{invalid} naive selector, not against valid alternatives.
+\textbf{Magnitude of the chain-vs-Bonferroni gain.} The advantage enters through the \emph{difference} between $\epsilon_n(\delta)$ and $\epsilon_n(\delta/K)$, i.e. $\sqrt{\ln(1/\delta)/2n}$ vs. $\sqrt{\ln(K/\delta)/2n}$. This difference is modest unless $K$ is large or $n$ is small; in the controlled simulation of Section~10.1, the certified-compute gap between chain and Bonferroni is a few percent. The bound therefore supports a calibrated interpretation: fixed-sequence testing removes the chain-length penalty from validity and can reduce the efficiency band relative to Bonferroni, but the realized compute premium over an invalid naive selector is empirical and must be reported for each model, target, and chain. The chain provides zero chain-length penalty on \emph{validity} and an expensive-to-cheap testing order aligned with deployment. It does \emph{not} imply large compute savings over other \emph{valid} selectors such as Holm; the large compute gaps reported in Section~10 are against the \emph{invalid} naive selector.
 
 Figure~\ref{fig:chain-band} visualizes the two-sided cost statement. The important point is not exact recovery of the cheapest safe index $k_0$, but the separation between validity and efficiency: validity prevents moving left of the safe frontier, while the finite-sample search price appears as a boundary band in compute.
 
@@ -294,9 +298,47 @@ Figure~\ref{fig:chain-band} visualizes the two-sided cost statement. The importa
 \textbf{Remark (assumption-free fallback when Assumption M is doubtful).} When per-exit thresholds are tuned jointly, or the empirical-monotonicity diagnostic looks suspect, drop the chain for an FWER procedure that needs no ordering. We implement and evaluate \textbf{Holm's step-down} \cite{holm1979simple}, which is valid unconditionally, requires no monotonicity, and strictly dominates Bonferroni. The general \emph{graphical} family in \cite{bretz2008graphical} subsumes both the chain and Holm and can recycle significance along the compute partial order---reducing to the chain test under exact monotonicity at a $\log|\Lambda|$ band---but we do not implement or evaluate it here, and do not claim its specific behavior.
 \end{quote}
 
+\subsection{Multi-chain CARC}
+
+The scalar chain $\tau(t)=(t,\dots,t)$ is simple but restrictive: avoiding a weak early exit may require a high threshold there while keeping later, more accurate exits permissive. Full-grid Bonferroni or Holm can search these per-exit combinations, but they pay a multiplicity price over every configuration. Multi-chain CARC uses an intermediate design. Before seeing calibration risks, specify $M$ compute-ordered chains
+
+\[
+\Lambda_m=\{\tau^{(1)}_m\preceq\cdots\preceq\tau^{(K_m)}_m\},\qquad m=1,\dots,M,
+\]
+
+for example several per-exit threshold schedules. Let nonnegative weights $w_m$ satisfy $\sum_m w_m\le1$. Run fixed-sequence testing from expensive to cheap within chain $m$ at level $\delta_m=w_m\delta$, union the certified sets
+
+\[
+\hat\Lambda_{\mathrm{MC}}=\bigcup_{m=1}^M \hat\Lambda_m,
+\]
+
+and output the lowest-cost configuration in $\hat\Lambda_{\mathrm{MC}}$; if the union is empty, report infeasibility. Uniform weights give $\delta_m=\delta/M$. The procedure reduces to the scalar chain when $M=1$ and to a Bonferroni-like rule when every chain has one configuration, but in the common case $M\ll\sum_m K_m$ it spends error probability across chains rather than across every candidate.
+
+\textbf{Proposition 1 (multi-chain validity).} \emph{Assume every chain order is fixed before calibration and each per-configuration p-value is valid for $H_\tau:R(\tau)>\alpha$. Multi-chain CARC controls the probability of outputting any unsafe certified configuration at level $\delta$:}
+
+\[
+\Pr\big(\exists \tau\in\hat\Lambda_{\mathrm{MC}}:\ R(\tau)>\alpha\big)\le\delta .
+\]
+
+\emph{Proof.} For chain $m$, fixed-sequence testing at level $\delta_m$ controls the probability of certifying any unsafe configuration within that chain by $\delta_m$, exactly as in Theorem 2(a). Therefore
+
+\[
+\begin{aligned}
+&\Pr\big(\exists \tau\in\hat\Lambda_{\mathrm{MC}}:\ R(\tau)>\alpha\big)\\
+&\quad\le \sum_{m=1}^M
+\Pr\big(\exists \tau\in\hat\Lambda_m:\ R(\tau)>\alpha\big)\\
+&\quad\le \sum_{m=1}^M \delta_m
+\le \delta,
+\end{aligned}
+\]
+
+where the first inequality is Boole's inequality and no independence across chains is required. Any downstream selection restricted to the union inherits the same validity. $\square$
+
+\textbf{Reading the guarantee.} Multi-chain CARC is not an adaptive search over arbitrary schedules. The chains, their order, and the weights must be fixed before calibration risks are inspected. The method covers several engineering-relevant threshold schedules while paying a chain-count penalty rather than a configuration-count penalty. If the pre-specified chains miss the globally cheapest safe policy, validity remains intact but efficiency is bounded only relative to the searched family.
+
 \section{Joint risk--compute control}
 
-Problem (P2) additionally certifies a compute budget $B$. The motivation is pre-commitment: an operator who must provision hardware, cap energy, or sign a latency SLA needs the budget guaranteed \emph{before} the test distribution is seen, whereas realized compute can simply be measured afterward. So this is a convenience guarantee layered on the essential risk one, not a co-equal claim. Compute $c_{E_\tau(X)}\in[0,C_{\max}]$ is bounded, so $\hat C(\tau)$ concentrates by Hoeffding: for a single $\tau$, with probability $\ge1-\delta_C$,
+Problem (P2) additionally certifies a compute budget $B$. The motivation is pre-commitment: an operator who must provision hardware, cap energy, or sign a latency service-level agreement may need a budget certificate before deployment, whereas realized compute can be measured after deployment. This certificate is secondary to the risk guarantee and is conservative under the range-based bound used here. Compute $c_{E_\tau(X)}\in[0,C_{\max}]$ is bounded, so $\hat C(\tau)$ concentrates by Hoeffding: for a single $\tau$, with probability $\ge1-\delta_C$,
 
 \[
 C(\tau)\;\le\;\hat C(\tau)+C_{\max}\sqrt{\tfrac{\ln(1/\delta_C)}{2n}}=:U_C(\tau;\delta_C).
@@ -316,11 +358,13 @@ To hold uniformly over the data-dependent choice, take a union bound over the $K
 
 A symmetric formulation --- \emph{minimize risk subject to a hard budget} --- swaps the roles, certifying a budget by inverting the compute bound and minimizing $\hat R$ over budget-feasible configs; both are special cases of certifying one functional and optimizing the other.
 
-\textbf{On the split $(\delta_R,\delta_C)$.} We do not present this as a contribution. Because $\delta_R,\delta_C$ enter only through $\sqrt{\ln(1/\cdot)}$, the split is a weak knob: moving mass between the two sides changes each slack only logarithmically. We default to $\delta_R=0.9\delta,\ \delta_C=0.1\delta$ --- favoring the risk side, which is the essential guarantee and whose extra power directly buys cheaper certified policies --- and verify in E5 that performance is flat across a broad central range. An operator who genuinely needs to optimize it faces a trivial one-dimensional search.
+\textbf{On the split $(\delta_R,\delta_C)$.} We do not present the split as a contribution. Because $\delta_R,\delta_C$ enter only through $\sqrt{\ln(1/\cdot)}$, moving error probability between risk and compute changes each slack only logarithmically. We default to $\delta_R=0.9\delta,\ \delta_C=0.1\delta$, allocating most power to the risk certificate, and verify in E5 that performance is flat across a broad central range. If a deployment requires a tuned split, the choice reduces to a one-dimensional search.
 
 \textbf{Looseness of the compute bound.} The range-$C_{\max}$ Hoeffding UCB $U_C$ is conservative, since per-input cost is far from uniform on $[0,C_{\max}]$; in our simulation the dual certificate is reported infeasible whenever the budget $B$ is set near the realized compute, even when a budget-respecting safe policy exists. An empirical-Bernstein compute bound (variance-adaptive, as in Section~6.1) tightens $U_C$ materially and is the recommended form in practice; we keep Hoeffding in the statement for transparency. This is a further reason we treat the compute certificate as secondary to the risk certificate.
 
 \section{Covariate-shift robustness}
+
+This section develops a formal sensitivity-analysis framework for covariate shift. It identifies the boundary under which shift-robust certification remains valid when importance weights are estimated: sample splitting prevents estimator reuse, an externally justified $L^1$ weight-error budget controls bias, and increasing that budget can make certification infeasible.
 
 Suppose deployment is under $Q$ with $X\sim Q_X$, $Y\mid X$ unchanged, and likelihood ratio $w(x)=\mathrm dQ_X/\mathrm dP_X$. The target is $R_Q(\tau)=\mathbb E_Q[\ell_{\mathrm{loss}}]=\mathbb E_P[w(X)\,\ell_{\mathrm{loss}}]$. The exact-weight case (Section~6.1) is standard; Section~6.2 handles the realistic case where $w$ is estimated.
 
@@ -330,7 +374,7 @@ If $0\le w\le W$ is known exactly, then $w\,\ell_{\mathrm{loss}}\in[0,W]$ has me
 
 \subsection{Estimated weights}
 
-Let weights be \textbf{estimated} by any method (density-ratio estimation, a discriminative classifier, moment matching). Two problems arise: (a) the estimator $\hat w$ is a function of data, so treating it as fixed in a Hoeffding bound is invalid; (b) $\hat w\ne w$ introduces bias. We resolve (a) by \textbf{sample splitting} and (b) by an \textbf{$L^1$ error budget}.
+Let weights be \textbf{estimated} by any method (density-ratio estimation, a discriminative classifier, moment matching). Two problems arise: (a) the estimator $\hat w$ is a function of data, so treating it as fixed in a Hoeffding bound is invalid; (b) $\hat w\ne w$ introduces bias. We resolve (a) by \textbf{sample splitting} and (b) by an $L^1$ \textbf{error budget}.
 
 Split the calibration set into independent folds $\mathcal D_1$ (size $n_1$) and $\mathcal D_2$ (size $n_2$). Estimate $\hat w$ on $\mathcal D_1$ \emph{only}. Suppose the estimate is bounded, $0\le\hat w\le\hat W$, and obeys an $L^1$ error budget
 
@@ -356,13 +400,26 @@ Compute the weighted empirical risk on the held-out fold, $\hat R_Q(\tau)=\frac1
 \emph{Proof.} Condition on $\mathcal D_1$; then $\hat w$ is a fixed (deterministic) function and the summands $\hat w(X_i)\ell_i$ for $i\in\mathcal D_2$ are i.i.d. in $[0,\hat W]$ with common mean $\mu:=\mathbb E_P[\hat w\,\ell_{\mathrm{loss}}]$. Decompose
 
 \[
-\mu=\mathbb E_P[w\,\ell_{\mathrm{loss}}]+\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}]=R_Q(\tau)+\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}].
+\begin{aligned}
+\mu
+&=\mathbb E_P[w\,\ell_{\mathrm{loss}}]
+  +\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}]\\
+&=R_Q(\tau)+\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}].
+\end{aligned}
 \]
 
 Since $\ell_{\mathrm{loss}}\in[0,1]$, the bias term is bounded by $|\mathbb E_P[(\hat w-w)\ell_{\mathrm{loss}}]|\le\mathbb E_P|\hat w-w|\le\eta$ by ($\star$). Under $H^Q_\tau$ we have $R_Q(\tau)>\alpha$, hence $\mu\ge R_Q(\tau)-\eta>\alpha-\eta$. By one-sided Hoeffding with range $\hat W$, for any observed $\hat R_Q(\tau)=r\le\alpha-\eta$,
 
 \[
-\Pr\big(\hat R_Q(\tau)\le r\,\big|\,\mathcal D_1\big)\le\exp\!\Big(-\tfrac{2n_2}{\hat W^2}(\mu-r)^2\Big)\le\exp\!\Big(-\tfrac{2n_2}{\hat W^2}\big((\alpha-\eta)-r\big)^2\Big)=p^Q_\tau.
+\begin{aligned}
+&\Pr\big(\hat R_Q(\tau)\le r\,\big|\,\mathcal D_1\big)\\
+&\quad\le
+\exp\!\Big(-\tfrac{2n_2}{\hat W^2}(\mu-r)^2\Big)\\
+&\quad\le
+\exp\!\Big(-\tfrac{2n_2}{\hat W^2}
+  \big((\alpha-\eta)-r\big)^2\Big)
+=p^Q_\tau.
+\end{aligned}
 \]
 
 So $p^Q_\tau$ is super-uniform under $H^Q_\tau$ conditionally on $\mathcal D_1$; since this holds for every realization of $\mathcal D_1$, it holds marginally. The downstream FWER arguments (Theorems 1--2) are unchanged, run conditionally on $\mathcal D_1$ and then marginalized, giving the stated $1-\delta$ validity under $Q$. $\square$
@@ -371,7 +428,7 @@ So $p^Q_\tau$ is super-uniform under $H^Q_\tau$ conditionally on $\mathcal D_1$;
 
 \textbf{Positioning.} The two ingredients are individually standard: conditioning on a held-out fold to make a plug-in estimator a fixed function, and absorbing estimation error into a margin in the spirit of sensitivity analysis (cf. the $\Gamma$-style robustness bounds and estimated-weight treatments in the conformal-under-shift literature \cite{tibshirani2020conformal,jin2023sensitivity}). The contribution is their combination in the LTT risk-control setting, where we have not seen the estimated-weight case stated with a finite-sample proof. We claim validity and interpretability, not tightness.
 
-\textbf{When this is useful, and when it is not.} Two technical limits, both visible in Section~10.1. First, $\eta$ must genuinely upper-bound the estimator's $L^1$ error for validity to hold; it cannot be read off the data. When $\eta$ is set large enough to be defensible, the deflation $\alpha-\eta$ can leave little room and the certificate becomes \emph{infeasible} --- in our simulation feasibility falls toward zero once $\eta$ approaches a fifth of $\alpha$. Thus the result buys robustness at a feasibility price that is acceptable only when the achievable risk sits well below $\alpha$. Second, validity when $\eta$ is \emph{under}-set is not automatic: it held in our simulation only because the fitted density-ratio happened to be conservatively biased; an anti-conservatively biased estimator with $\mathbb E|\hat w-w|>\eta$ can and does breach the target (we exhibit this in Section~10.1 with a deliberately biased estimator). The takeaway is to treat Theorem 4 as a sensitivity statement with a known feasibility cost, not as a general shift solution.
+\textbf{When this is useful, and when it is not.} Two technical limits, both visible in Section~10.1, determine the interpretation. First, $\eta$ must upper-bound the estimator's $L^1$ error for validity to hold; it cannot be inferred from the same calibration losses. When $\eta$ is set large enough to be defensible, the deflation $\alpha-\eta$ can leave insufficient slack and make the certificate \emph{infeasible}; in the simulation, feasibility falls toward zero once $\eta$ approaches a fifth of $\alpha$. The result is therefore useful when achievable risk is well below $\alpha$. Second, validity is not automatic when $\eta$ is under-specified: it held in one simulation only because the fitted density ratio was conservatively biased, while a deliberately anti-conservative estimator with $\mathbb E|\hat w-w|>\eta$ breaches the target in Section~10.1. Theorem 4 should therefore be read as a sensitivity statement with a measurable feasibility cost, not as a general distribution-shift solution.
 
 \section{Algorithm summary}
 
@@ -399,16 +456,17 @@ So $p^Q_\tau$ is super-uniform under $H^Q_\tau$ conditionally on $\mathcal D_1$;
 \end{algorithmic}
 \end{algorithm}
 
-Cost: one forward pass collecting all exit scores per calibration point ($O(n)$ inference), then $O(nK)$ to score the chain --- negligible relative to training.
+Cost: the procedure requires one forward pass collecting all exit scores per calibration point ($O(n)$ inference) and $O(nK)$ post-processing to score the chain. This calibration cost is separate from model training and from deployment latency.
 
 \section{Related work}
 
 \begin{itemize}
-\item \textbf{Conformal prediction and risk control.} Split conformal prediction \cite{vovk2022algorithmic,lei2018distributionfree}, conformal risk control \cite{bates2021distributionfree,angelopoulos2024conformal}, and LTT \cite{angelopoulos2025learn} provide distribution-free guarantees for data-dependent prediction-set or model-configuration choices (see \cite{angelopoulos2023gentle} for an introduction). These methods address selection after calibration, whereas naive validation thresholding does not correct for the multiplicity induced by searching over thresholds. Our use of LTT is direct; the added content is the adaptive-inference formulation, the compute-chain efficiency analysis, and the joint risk--compute extension.
-\item \textbf{Multiple testing for ordered hypotheses.} Bonferroni, fixed-sequence/fallback procedures \cite{wiens2003fixed}, Holm step-down \cite{holm1979simple}, and graphical sequentially-rejective tests \cite{bretz2008graphical} control family-wise error for finite hypothesis families. These procedures do not by themselves specify which hypothesis order is operationally meaningful for adaptive inference. Here the compute order is fixed before calibration and coincides with the deployment objective: among certified policies, select the cheapest one.
-\item \textbf{Adaptive computation.} Surveyed comprehensively in \cite{han2022dynamic,scardapane2020early}, adaptive-depth architectures such as BranchyNet \cite{teerapittayanon2016branchynet}, MSDNet \cite{huang2018multiscale}, SkipNet \cite{wang2018skipnet}, patience-based exiting \cite{zhou2020bert}, and LLM cascades/routers \cite{chen2023frugalgpt} reduce average inference cost by early termination or model routing. Their threshold rules are typically tuned to empirical validation curves, which can produce low compute but does not certify population risk after threshold search. CARC targets this missing calibration layer; it does not alter the backbone architecture.
-\item \textbf{Distribution shift.} Weighted conformal prediction \cite{tibshirani2020conformal} and sensitivity-analysis methods for conformal prediction under unknown or misspecified weights \cite{jin2023sensitivity} address deployment distributions different from calibration distributions. Theorem 4 follows the same cautionary pattern: it gives a valid certificate only when the supplied $L^1$ weight-error budget is correct. The result is not a general shift-robust deployment solution; it is a finite-sample sensitivity statement for the LTT risk-control setting.
-\item \textbf{Selective prediction.} Selective risk and coverage \cite{geifman2017selective} also formalize when a system may abstain or defer. CARC can encode selective risk through $\ell_{\mathrm{loss}}$, but the primary object here is threshold selection over compute-adaptive policies rather than coverage optimization alone.
+\item \textbf{Conformal prediction and risk control.} Split conformal prediction \cite{vovk2022algorithmic,lei2018distributionfree}, conformal risk control \cite{bates2021distributionfree,angelopoulos2024conformal}, and LTT \cite{angelopoulos2025learn} provide distribution-free guarantees for data-dependent prediction sets or model configurations (see \cite{angelopoulos2023gentle} for an introduction). These methods address the same statistical obstacle that invalidates naive validation thresholding: after a search over candidate thresholds, the selected configuration is no longer a fixed hypothesis. CARC uses the LTT reduction directly. The added content is the adaptive-inference instantiation: a compute-ordered candidate family, an efficiency statement for fixed-sequence certification, explicit infeasibility semantics, and a conservative joint risk--compute extension.
+\item \textbf{Multiple testing for ordered hypotheses.} Bonferroni, fixed-sequence/fallback procedures \cite{wiens2003fixed}, Holm step-down \cite{holm1979simple}, and graphical sequentially-rejective tests \cite{bretz2008graphical} control family-wise error for finite hypothesis families. By themselves, these procedures do not define which hypothesis order is operationally meaningful for an early-exit model. CARC fixes the order by compute before calibration, so the testing sequence matches the deployment objective: among certified policies, choose the lowest-cost one in the searched family.
+\item \textbf{Adaptive computation.} Adaptive-depth architectures such as BranchyNet \cite{teerapittayanon2016branchynet}, MSDNet \cite{huang2018multiscale}, SkipNet \cite{wang2018skipnet}, patience-based exiting \cite{zhou2020bert}, and LLM cascades/routers \cite{chen2023frugalgpt} reduce average inference cost by early termination or model routing; broader surveys appear in \cite{han2022dynamic,scardapane2020early}. These systems typically tune exit thresholds from empirical validation curves. That tuning can reduce compute, but it does not certify population risk after threshold search. CARC addresses the calibration layer only: it assumes the adaptive model and candidate scores are fixed, then certifies or rejects candidate threshold policies.
+\item \textbf{Calibrated adaptive inference.} Closest to this setting, confident adaptive language modeling \cite{schuster2022confident} calibrates early-exit thresholds for transformer decoders with an LTT-style consistency guarantee, and conformal/risk-control wrappers have been applied to selective and cascaded prediction \cite{angelopoulos2024conformal,chen2023frugalgpt}. These works show that calibrated exit rules are possible for a single confidence parameter or a specific architecture. CARC differs in three deployment-relevant ways: (a) it tests policies in a compute order that coincides with the cost objective, so the certified output is the cheapest in-chain safe policy; (b) it extends from a scalar threshold to several pre-specified per-exit chains under a chain-level error split (Proposition~1); and (c) it treats an empty certified set as an explicit infeasibility report rather than an implicit fallback. The estimated-weight covariate-shift statement in Theorem~4 is included as a finite-sample sensitivity result for the same LTT risk-control problem.
+\item \textbf{Distribution shift.} Weighted conformal prediction \cite{tibshirani2020conformal} and sensitivity-analysis methods for conformal prediction under unknown or misspecified weights \cite{jin2023sensitivity} address deployment distributions that differ from calibration distributions. Theorem 4 follows this conservative logic: validity requires a correct externally supplied $L^1$ weight-error budget, and feasibility can disappear as the budget grows. The result is a sensitivity certificate for a stated shift model, not a general robustness claim.
+\item \textbf{Selective prediction.} Selective risk and coverage \cite{geifman2017selective} formalize systems that abstain or defer. CARC can encode selective risk through $\ell_{\mathrm{loss}}$, but its primary object is different: it certifies threshold selection over compute-adaptive policies, with compute and infeasibility reported alongside risk.
 \end{itemize}
 
 \begin{table*}[t]
@@ -416,14 +474,14 @@ Cost: one forward pass collecting all exit scores per calibration point ($O(n)$ 
 \caption{Where CARC sits among post-calibration selection methods for adaptive inference. ``DF post-selection risk'': distribution-free risk guarantee for the data-dependent selected policy. ``Compute-ordered search'': the candidate family is tested in an order that coincides with the deployment cost objective. ``Infeasibility reporting'': the procedure explicitly returns ``no certified policy'' rather than a fallback of unknown risk. Entries describe each method's typical native form; weighted or LTT-wrapped variants can extend several rows.}
 \label{tab:method-comparison}
 \scriptsize
-\setlength{\tabcolsep}{6pt}
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lccccc@{}}
 \toprule
-Method & DF post-selection risk & Multiplicity correction & Compute-ordered search & Infeasibility reporting & Covariate-shift certificate \\
+Method & DF risk & Multiplicity & Ordered search & Infeasible? & Shift cert. \\
 \midrule
 Naive validation tuning & No & No & Greedy (uncorrected) & No & No \\
-Split conformal / conformal risk control \cite{bates2021distributionfree,angelopoulos2024conformal} & Yes & Single parameter & No & Implicit & Weighted variants \\
-Learn-then-Test \cite{angelopoulos2025learn} & Yes & Yes (FWER) & Order-agnostic & Implicit & Via weighting \\
+Split conformal / CRC \cite{bates2021distributionfree,angelopoulos2024conformal} & Yes & Single parameter & No & Implicit & Weighted variants \\
+LTT \cite{angelopoulos2025learn} & Yes & Yes (FWER) & Order-agnostic & Implicit & Via weighting \\
 CARC (this paper) & Yes & Yes (FWER) & Yes (compute chain) & Yes (explicit) & Yes (sensitivity, Th.~4) \\
 \bottomrule
 \end{tabular}
@@ -431,20 +489,20 @@ CARC (this paper) & Yes & Yes (FWER) & Yes (compute chain) & Yes (explicit) & Ye
 
 \section{Implementation and evaluation overview}
 
-\textbf{Implemented components.} The implementation follows the theoretical pipeline. A fixed adaptive model first writes cached per-exit scores, predictions, correctness indicators, and cumulative compute. The evaluator converts that cache into loss and cost matrices over a finite threshold chain, computes valid p-values, applies a pre-committed FWER selector, and returns the certified set, selected threshold, feasibility status, and certificate fields for the requested $(\alpha,\delta,B)$. The code implements Hoeffding, Hoeffding--Bentkus, and empirical-Bernstein p-values; Bonferroni, fixed-sequence chain, and Holm selectors; the joint risk--compute test; the estimated-weight shift diagnostic; and cache adapters for synthetic, CIFAR-100 branchy-network, and tabular-cascade settings.
+\textbf{Implemented components.} The implementation follows the pipeline used in the theory. A fixed adaptive model writes cached per-exit scores, predictions, correctness indicators, and cumulative compute. The evaluator maps that cache to loss and cost matrices over a finite threshold family, computes valid p-values, applies a pre-committed FWER selector, and returns the certified set, selected threshold, feasibility status, and certificate fields for the requested $(\alpha,\delta,B)$. The code implements Hoeffding, Hoeffding--Bentkus, and empirical-Bernstein p-values; Bonferroni, fixed-sequence chain, Holm, and multi-chain selectors; the joint risk--compute test; the estimated-weight shift diagnostic; and cache adapters for synthetic, CIFAR branchy-network, and tabular-cascade settings.
 
-\textbf{Completed evaluations.} The controlled simulation tests the proof-facing properties under oracle risks. The digits tabular-cascade cache tests the same certification path on a feasible real-cache target grid. The CIFAR-100 branchy-cache run tests the failure mode in which the trained model cannot meet most preregistered targets and the correct output is usually infeasibility. Wall-clock latency and hardware-dependent throughput are not certified quantities in this manuscript; compute is represented by the pre-specified cost proxy in each cache.
+\textbf{Completed evaluations.} The controlled simulation tests proof-facing properties under oracle risks. The digits tabular-cascade cache tests the same certification path on a feasible real-cache target grid. The CIFAR-10 branchy-cache run provides a feasible neural-cache benchmark for the redesigned selector, and the CIFAR-100 branchy-cache run tests the failure mode in which the trained model cannot meet most pre-defined targets. Wall-clock latency and hardware throughput are not certified quantities in this manuscript; compute is represented by the pre-specified cost proxy in each cache.
 
 \section{Experiments}
 
-The experiments follow the pipeline induced by the theory. First, the controlled simulation verifies finite-sample validity and compute behavior in a setting where true risk is known. Second, the digits real-cache experiment evaluates the same certification path when the target grid is feasible before calibration. Third, the CIFAR-100 branchy-cache experiment evaluates the opposite case, where most preregistered targets are below the finite-pool risk frontier and the correct certified outcome is usually infeasibility. Larger vision, language, and real-shift deployments remain outside the evidence base of this manuscript.
+The experiments follow the same sequence as the method: controlled validation of the certificate, expansion from scalar chains to multi-chain search, feasible real-cache evaluation, and infeasibility diagnostics. First, the controlled simulation verifies finite-sample validity and compute behavior when true risk is known. Second, the multi-chain redesign experiment tests whether richer pre-specified threshold families improve certified efficiency without losing validity. Third, real-cache experiments evaluate the same certification path on feasible tabular cascades and a feasible CIFAR-10 branchy network. Fourth, the CIFAR-100 branchy-cache experiment evaluates the opposite case, where most pre-defined targets are below the finite-pool risk frontier and the correct certified outcome is infeasibility, while also testing feasible higher-risk cells for the redesigned selector. Larger vision, language, and real-shift deployments remain outside the evidence base of this manuscript.
 
-Figure~\ref{fig:empirical-summary} summarizes the controlled simulation, CIFAR diagnostic, and synthetic shift sensitivity sweep. Table~\ref{tab:digits-confirmatory} reports the positive real-cache validation. These artifacts should be read as scoped evidence: simulation verifies theorem-level behavior with oracle risks; digits validates the cache evaluator on a feasible real-cache grid; CIFAR diagnoses infeasibility for a particular branchy model and target grid; and the shift experiment is a sensitivity analysis rather than a general shift-robust deployment claim.
+Figure~\ref{fig:empirical-summary} summarizes the controlled simulation, CIFAR-100 diagnostic, and synthetic shift sensitivity sweep. Table~\ref{tab:digits-confirmatory} reports the original positive real-cache validation, and Table~\ref{tab:cifar10-multichain} reports the CIFAR-10 neural-cache multi-chain comparison. The remaining multi-chain artifacts are reported in text and released as JSON result files. These artifacts support scoped claims: simulation verifies theorem-level behavior with oracle risks; multi-chain experiments test certified search over richer threshold families; digits and breast cancer validate the cache evaluator on feasible real-cache grids; CIFAR-10 evaluates the redesigned selector on a feasible neural cache; CIFAR-100 diagnoses infeasibility for a weaker branchy model and target grid; and the shift experiment is a sensitivity analysis rather than a general shift-robust deployment claim.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{figures/fig3_empirical_summary.pdf}
-\caption{\textbf{Empirical evidence summary from the completed studies.} (A) In the controlled simulation, the certified chain stays below the nominal violation levels while naive validation inspection violates far above them. (B) In the representative E2 cell, the chain has lower certified expected cost than Holm or Bonferroni, and remains close to the invalid naive reference. (C) In the CIFAR-100 finite-pool diagnostic, bars show mean violation rates across the reported split cells for each target and method; vertical labels give mean feasibility, and exact cell values are in Tables~\ref{tab:embedded-cifar-preregistered}--\ref{tab:embedded-cifar-exploratory}. The $\alpha=0.30$ target is pre-registered but infeasible in full-pool risk; $\alpha\in\{0.35,0.40\}$ is exploratory. (D) Under shift, an undersized or biased weight budget can fail, while defensible $\eta$ values make the estimated-weight certificate infeasible in this synthetic sweep.}
+\caption{\textbf{Empirical evidence summary from the completed studies.} (A) In the controlled simulation, the certified chain stays below the nominal violation levels while naive validation inspection violates far above them. (B) In the representative E2 cell, the chain has lower certified expected cost than Holm or Bonferroni, and remains close to the invalid naive reference. (C) In the CIFAR-100 finite-pool diagnostic, bars show mean violation rates across the reported split cells for each target and method; vertical labels give mean feasibility, and exact cell values are in Tables~\ref{tab:embedded-cifar-fixed-grid}--\ref{tab:embedded-cifar-exploratory}. The $\alpha=0.30$ target is pre-defined but infeasible in full-pool risk; $\alpha\in\{0.35,0.40\}$ is exploratory. (D) Under shift, an undersized or biased weight budget can fail, while defensible $\eta$ values make the estimated-weight certificate infeasible in this synthetic sweep.}
 \label{fig:empirical-summary}
 \end{figure}
 
@@ -452,7 +510,7 @@ Figure~\ref{fig:empirical-summary} summarizes the controlled simulation, CIFAR d
 
 We use a synthetic early-exit model ($L=5$ exits, competence increasing with depth, noisy confidences, global-threshold chain of $K=40$ configurations) whose true per-configuration risk and cost are computable by large-sample Monte Carlo. This setting isolates the statistical guarantee: every selected policy can be checked against true risk rather than a held-out finite-pool proxy. It is not evidence about real network accuracy or hardware performance, and it does not validate Assumption M or weight estimability in deployment. The complete row-level numerical outputs are embedded in Tables~\ref{tab:embedded-e1}--\ref{tab:embedded-e6}.
 
-\emph{Validity and naive failure (E1/E3).} Across a grid of targets and $T=3000$ calibration/test splits per cell, the certified chain violates $R(\hat\tau)\le\alpha$ at rates of $0.0010$--$0.0143$, all below $\delta\in\{0.05,0.10\}$. The naive recipe (cheapest configuration with $\hat R\le\alpha$, no multiplicity correction) violates at $0.2313$--$0.3513$. Thus, in the oracle-risk simulation, post-selection calibration error is not a small perturbation; it is the dominant failure mode of the uncorrected baseline.
+\emph{Validity and naive failure (E1/E3).} Across a grid of targets and $T=3000$ calibration/test splits per cell, the certified chain violates $R(\hat\tau)\le\alpha$ at rates of $0.0010$--$0.0143$, all below $\delta\in\{0.05,0.10\}$. The naive recipe (cheapest configuration with $\hat R\le\alpha$, no multiplicity correction) violates at $0.2313$--$0.3513$. In this oracle-risk simulation, the main failure of the uncorrected baseline is post-selection calibration error, not the underlying candidate family.
 
 \emph{Cost of the guarantee (E2).} At a representative $(\alpha,\delta)=(0.119,0.10)$ with $T=2000$, the certified expected cost is $3.260$ for the chain, $3.311$ for Holm, and $3.326$ for Bonferroni; all three certified selectors satisfy the tested violation constraint. At the matched E1 target, the invalid naive policy costs $3.183$. The chain therefore pays a small premium over the invalid baseline in this synthetic setting, and its advantage over Bonferroni is modest. The result supports the theoretical distinction between validity and efficiency, but it does not imply that the compute premium will be small for every trained model or target.
 
@@ -460,15 +518,47 @@ We use a synthetic early-exit model ($L=5$ exits, competence increasing with dep
 
 \emph{Covariate shift (E6).} Under an exp-tilt shift toward harder inputs, the unweighted source-calibrated certificate violates the target at rate $0.875$. The estimated-weight sweep has realized mean weight error $\|\hat w-w\|_1\approx0.060$: when $\eta\in\{0,0.03\}$, the certificate remains feasible with $0$ observed violations but lacks the assumption required by Theorem 4; at $\eta=0.06$, feasibility drops to $0.35$; and at $\eta\in\{0.09,0.12\}$, feasibility is $0$. With a deliberately downward-biased estimator and an underspecified $\eta=0.02$ ($\|\hat w-w\|_1\approx0.351$), the certificate violates at rate $0.895\gg\delta$. These results calibrate Theorem 4 as a sensitivity tool, not as a robustification method that can be applied without a defensible weight-error budget.
 
-\subsection{Digits tabular-cascade real-cache confirmation}
+\subsection{Multi-chain selector redesign}
 
-The confirmatory real-cache study uses the scikit-learn digits data with a three-exit tabular cascade: Gaussian naive Bayes, logistic regression, and support-vector classification, with relative exit costs $1.0$, $4.0$, and $12.0$. The train/cache split is fixed by seed $20260615$; the cache contains $899$ examples, $64$ features, and $10$ classes. The full-pool exit accuracies are $0.863$, $0.968$, and $0.981$, and the final-exit full-pool risk is $0.0189$. Thus the preregistered targets $\alpha\in\{0.05,0.10,0.15\}$ are feasible before calibration. The grid uses Hoeffding--Bentkus p-values, $T=1000$ calibration/test partitions per cell, $\delta\in\{0.05,0.10\}$, and calibration sizes $\{100,300\}$. Violation rates are counted over all split attempts; infeasible reports count as no certified violation but are exposed through the feasibility column.
+The redesigned selector uses six pre-specified per-exit threshold chains, each with 30 levels, giving 180 candidate policies. In the synthetic E8 experiment, true risk and cost are again available from a large oracle sample. With $n=1000$, $T=1000$, and Hoeffding--Bentkus p-values, multi-chain CARC keeps true violation at $0$--$0.001$ across the tested $(\alpha,\delta)$ cells, whereas naive validation inspection violates at $0.363$--$0.382$. Multi-chain has lower mean true cost than Holm and Bonferroni in every tested cell. Relative to scalar-chain CARC, it has higher feasibility at the strictest target and lower mean cost in five of six cells. This experiment tests Proposition 1 empirically: a richer pre-specified family can improve certified efficiency without applying a per-configuration Bonferroni correction.
 
-Across all 12 chain cells, the empirical violation rate is $0$--$0.051$, and no cell exceeds its matching $\delta$. The most informative contrast is at $\alpha=0.10$: the chain selects in $0.884$--$1.000$ of trials, violates at $0.002$--$0.018$, and has mean cost $11.800$--$11.979$; naive validation inspection violates at $0.486$--$0.571$ while spending $5.14$--$6.09$ fewer relative cost units. At $\alpha=0.05$, the stringent target often forces the final exit. At $\alpha=0.15$, the target is easier and the naive baseline can be safe in some cells, but Table~\ref{tab:digits-confirmatory} still reports the compute premium of certification. This experiment is not a claim about tabular classification performance; it validates that the cache-based CARC pipeline reports feasible targets, infeasibility, violation rates, and compute premium without tuning on test splits. The cascade is intentionally non-neural: it isolates the calibration layer, which depends on the trained system only through the cached scores, losses, and costs, and is therefore exercised faithfully here even though the backbone is not a deep early-exit network.
+The real-cache reanalysis gives the same qualitative picture, with dataset-specific limits. On the digits cache at $\alpha=0.10$, multi-chain violation is $0.002$--$0.013$ and mean relative cost is $2.78$--$2.83$, compared with scalar-chain cost $6.05$--$6.08$ and naive violation $0.442$--$0.542$. On the breast-cancer cache, $\alpha=0.15$ with $120$ calibration examples gives multi-chain violation $0$, feasibility $0.986$--$0.995$, and mean cost $1.1$--$1.3$, below scalar-chain and Holm/Bonferroni. The wine cache is saturated---all exits are already near-perfect---and is therefore treated as a boundary case rather than a headline result.
+
+On CIFAR-10, the redesigned selector gives a feasible neural-cache benchmark. The branchy model reaches final-exit test accuracy $0.8825$ and a full-pool risk floor near $0.1173$, so targets $\alpha\ge0.12$ are feasible on the finite cache. With $n_{\mathrm{cal}}=2000$, multi-chain CARC has lower mean MAC cost than scalar-chain CARC in every tested $(\alpha,\delta)$ cell from $\alpha=0.12$ to $0.30$; in the more stable range $\alpha=0.15$--$0.30$, it selects in $0.956$--$1.000$ of trials, violates at $0.001$--$0.017$, and remains cheaper than Holm and Bonferroni. Table~\ref{tab:cifar10-multichain} reports the $n_{\mathrm{cal}}=2000$ cells used for this claim.
 
 \begin{table*}[t]
 \centering
-\caption{Preregistered digits tabular-cascade real-cache confirmation. The cache uses $899$ examples, $K=101$ scalar thresholds, Hoeffding--Bentkus p-values, $T=1000$, violation denominator ``all'', and relative costs $[1,4,12]$. The certified compute premium is mean chain cost minus mean naive cost in the same relative cost units.}
+\caption{CIFAR-10 branchy-cache multi-chain comparison at $n_{\mathrm{cal}}=2000$. The cache has $n=10000$ test examples, four exits, six pre-specified chains with 30 levels each ($K=180$ policies), Hoeffding--Bentkus p-values, $T=1000$, and violation denominator ``all''. Costs are mean analytical MACs in millions.}
+\label{tab:cifar10-multichain}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}ccccccccc@{}}
+\toprule
+$\alpha$ & $\delta$ & MC feas. & MC viol. & MC cost & Scalar cost & Holm cost & Bonf. cost & Naive viol. \\
+\midrule
+0.15 & 0.05 & 0.956 & 0.008 & 74.87 & 75.98 & 78.24 & 78.76 & 0.490 \\
+0.15 & 0.10 & 0.977 & 0.013 & 73.97 & 74.68 & 78.01 & 78.38 & 0.472 \\
+0.20 & 0.05 & 1.000 & 0.001 & 59.84 & 60.92 & 61.33 & 61.54 & 0.455 \\
+0.20 & 0.10 & 1.000 & 0.006 & 59.43 & 60.36 & 60.90 & 61.14 & 0.465 \\
+0.25 & 0.05 & 1.000 & 0.002 & 52.43 & 53.15 & 53.47 & 53.77 & 0.428 \\
+0.25 & 0.10 & 1.000 & 0.009 & 52.11 & 52.73 & 53.30 & 53.56 & 0.404 \\
+0.30 & 0.05 & 1.000 & 0.002 & 45.89 & 46.38 & 46.80 & 47.08 & 0.389 \\
+0.30 & 0.10 & 1.000 & 0.017 & 45.61 & 46.02 & 46.51 & 46.87 & 0.382 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+On CIFAR-100, multi-chain does not make the old $\alpha=0.30$ target meaningfully feasible; the trained branchy model remains too weak for that target. At feasible higher-risk targets, however, the selector improves certified efficiency relative to valid full-family baselines. At $\alpha=0.40$ with $n_{\mathrm{cal}}=2000$, multi-chain is feasible in all trials, has held-out violation $0.007$ at $\delta=0.05$ and $0.011$ at $\delta=0.10$, and costs $86.59$M and $85.95$M MACs, respectively. The matched scalar-chain costs are $87.22$M and $86.71$M MACs, while Holm and Bonferroni are more expensive. These CIFAR-100 results support the redesigned selector at feasible targets but do not support low-error certified deployment for this trained CIFAR-100 model.
+
+\subsection{Digits tabular-cascade real-cache confirmation}
+
+The digits study gives a feasible real-cache check of the scalar-chain certification path. It uses the scikit-learn digits data with a three-exit tabular cascade: Gaussian naive Bayes, logistic regression, and support-vector classification, with relative exit costs $1.0$, $4.0$, and $12.0$. The train/cache split is fixed by seed $20260615$; the cache contains $899$ examples, $64$ features, and $10$ classes. The full-pool exit accuracies are $0.863$, $0.968$, and $0.981$, and the final-exit full-pool risk is $0.0189$. Thus the pre-defined targets $\alpha\in\{0.05,0.10,0.15\}$ are feasible before calibration. The grid uses Hoeffding--Bentkus p-values, $T=1000$ calibration/test partitions per cell, $\delta\in\{0.05,0.10\}$, and calibration sizes $\{100,300\}$. Violation rates are counted over all split attempts; infeasible reports count as no certified violation but are exposed through the feasibility column.
+
+Across all 12 chain cells, the empirical violation rate is $0$--$0.051$, and no cell exceeds its matching $\delta$. The most informative contrast is at $\alpha=0.10$: the chain selects in $0.884$--$1.000$ of trials, violates at $0.002$--$0.018$, and has mean cost $11.800$--$11.979$; naive validation inspection violates at $0.486$--$0.571$ while spending $5.14$--$6.09$ fewer relative cost units. At $\alpha=0.05$, the stringent target often forces the final exit. At $\alpha=0.15$, the target is easier and the naive baseline can be safe in some cells, but Table~\ref{tab:digits-confirmatory} still reports the compute premium of certification. This experiment is not a claim about tabular classification performance; it tests whether the cache-based CARC pipeline reports feasible targets, infeasibility, violation rates, and compute premium without tuning on test splits. The non-neural cascade isolates the calibration layer: CARC uses the trained system only through cached scores, losses, and costs, so this study exercises the same statistical interface used by neural early-exit caches while leaving neural-representation quality outside its scope.
+
+\begin{table*}[t]
+\centering
+\caption{Fixed-grid digits tabular-cascade real-cache confirmation. The cache uses $899$ examples, $K=101$ scalar thresholds, Hoeffding--Bentkus p-values, $T=1000$, violation denominator ``all'', and relative costs $[1,4,12]$. The certified compute premium is mean chain cost minus mean naive cost in the same relative cost units.}
 \label{tab:digits-confirmatory}
 \scriptsize
 \setlength{\tabcolsep}{4pt}
@@ -494,50 +584,55 @@ $\alpha$ & $\delta$ & $n_{\mathrm{cal}}$ & Chain feas. & Chain viol. & 95\% CI &
 
 \subsection{CIFAR-100 real-cache diagnostic}
 
-The CIFAR-100 study is a deliberate stress test of the most safety-critical behavior in CARC: what the procedure does when the trained system cannot meet the requested targets. The correct response is to certify nothing and report infeasibility, and the value of that response is measured against what an uncorrected baseline would have deployed in its place. The diagnostic uses a branchy ResNet-56-style model with four exits (after the stem and after each of three residual stages), scalar top-softmax thresholds on a $K=100$ grid, 0--1 loss, and analytical cumulative MAC estimates. The model was trained for 80 epochs and evaluated on the CIFAR-100 test set. The per-exit test accuracies are $0.0646$, $0.3040$, $0.6147$, and $0.6945$; the corresponding cumulative exit costs are $0.44$, $42.91$, $84.33$, and $125.75$ million MACs. Because this is a finite test-pool diagnostic, the reported violation frequencies use held-out split risk as a proxy for population risk, not as an oracle truth measurement. The complete row-level numerical outputs are embedded in Tables~\ref{tab:embedded-cifar-preregistered}--\ref{tab:embedded-cifar-exploratory}.
+The CIFAR-100 study evaluates the infeasibility branch of CARC on a neural cache whose trained model is below the requested accuracy regime. In this setting, a valid selector should withhold certification rather than return a policy whose held-out risk remains above the target. The diagnostic uses a branchy ResNet-56-style model with four exits (after the stem and after each of three residual stages), scalar top-softmax thresholds on a $K=100$ grid, 0--1 loss, and analytical cumulative MAC estimates. The model was trained for 80 epochs and evaluated on the CIFAR-100 test set. The per-exit test accuracies are $0.0646$, $0.3040$, $0.6147$, and $0.6945$; the corresponding cumulative exit costs are $0.44$, $42.91$, $84.33$, and $125.75$ million MACs. Because this is a finite test-pool diagnostic, the reported violation frequencies use held-out split risk as a proxy for population risk, not as an oracle truth measurement. The complete row-level numerical outputs are embedded in Tables~\ref{tab:embedded-cifar-fixed-grid}--\ref{tab:embedded-cifar-exploratory}.
 
-\textbf{Pre-registered CIFAR grid.} The frozen CIFAR E1 grid uses $\alpha\in\{0.05,0.10,0.20,0.30\}$, $\delta\in\{0.05,0.10\}$, calibration sizes $\{500,2000\}$, Hoeffding--Bentkus p-values, and $T=1000$ random calibration/test partitions per cell. The full test-pool minimum risk along the chain is $0.3055$, so none of the pre-registered targets has a truly safe configuration. The certified chain therefore mostly reports infeasibility. Its violation frequency over all split attempts is $0$ for $\alpha\le0.20$ and $0.000$--$0.013$ at $\alpha=0.30$, but feasibility at $\alpha=0.30$ is only $0.000$--$0.013$. The naive selector instead selects in $0.281$--$0.457$ of the $\alpha=0.30$ split attempts and violates in exactly those attempts, because the selected finite-pool policies remain above the target. This result supports the infeasibility-reporting behavior and exposes the naive failure mode; it does not support a claim that this CIFAR model enables low-error certified deployment at the preregistered targets.
+\textbf{Fixed CIFAR target grid.} The frozen CIFAR E1 grid uses $\alpha\in\{0.05,0.10,0.20,0.30\}$, $\delta\in\{0.05,0.10\}$, calibration sizes $\{500,2000\}$, Hoeffding--Bentkus p-values, and $T=1000$ random calibration/test partitions per cell. The full test-pool minimum risk along the chain is $0.3055$, so none of the pre-defined targets has a truly safe configuration. The certified chain therefore mostly reports infeasibility. Its violation frequency over all split attempts is $0$ for $\alpha\le0.20$ and $0.000$--$0.013$ at $\alpha=0.30$, but feasibility at $\alpha=0.30$ is only $0.000$--$0.013$. The naive selector instead selects in $0.281$--$0.457$ of the $\alpha=0.30$ split attempts and violates in exactly those attempts, because the selected finite-pool policies remain above the target. This result supports the infeasibility-reporting behavior and exposes the naive failure mode; it does not support a claim that this CIFAR model enables low-error certified deployment at the pre-defined targets.
 
-\textbf{Exploratory feasible-target check.} To confirm that the cache evaluator behaves sensibly once the target is feasible, we ran a post hoc diagnostic at $\alpha\in\{0.35,0.40\}$ with the same $\delta$, calibration sizes, p-values, and split count. The chain violation frequencies are $0.012$--$0.038$, always below the corresponding $\delta$; naive validation tuning violates at $0.441$--$0.529$. Chain feasibility is high for $\alpha=0.40$ ($0.994$--$1.000$) and mixed for $\alpha=0.35$ ($0.484$--$0.996$), matching the fact that the feasible frontier is close to the final-exit risk. Mean chain cost is $85.65$--$105.30$ million MACs across these feasible-target cells, compared with $81.28$--$92.85$ million MACs for the invalid naive policy. Holm and Bonferroni are more conservative: they have lower or zero violation rates but lower feasibility and higher mean cost in the same cells.
+\textbf{Exploratory feasible-target check.} We also ran a post hoc diagnostic at $\alpha\in\{0.35,0.40\}$ with the same $\delta$, calibration sizes, p-values, and split count to evaluate the same cache above its finite-pool risk floor. The chain violation frequencies are $0.012$--$0.038$, always below the corresponding $\delta$; naive validation tuning violates at $0.441$--$0.529$. Chain feasibility is high for $\alpha=0.40$ ($0.994$--$1.000$) and mixed for $\alpha=0.35$ ($0.484$--$0.996$), matching the fact that the feasible frontier is close to the final-exit risk. Mean chain cost is $85.65$--$105.30$ million MACs across these feasible-target cells, compared with $81.28$--$92.85$ million MACs for the invalid naive policy. Holm and Bonferroni are more conservative: they have lower or zero violation rates but lower feasibility and higher mean cost in the same cells.
 
 \textbf{Monotonicity diagnostic.} The full-pool chain risk is not perfectly nonincreasing: four adjacent threshold pairs show risk increases, with maximum increase $2\times10^{-4}$, while cost is nondecreasing. This small empirical violation does not affect validity, but it means the Assumption M efficiency interpretation should be read as a diagnostic rather than a confirmed model property on this cache.
 
 \section{Limitations}
 
 \begin{itemize}
-\item \textbf{Calibration assumptions.} The base validity result assumes i.i.d. calibration data from the deployment distribution. Under covariate shift, Theorem 4 additionally requires an $L^1$ weight-error budget $\eta$; if the budget is incorrect or the shift is unmodeled, the certificate can fail.
-\item \textbf{Loss assumptions.} The concentration bounds require bounded losses. Unbounded or heavy-tailed risk functionals require different concentration arguments, such as truncation or variance-adaptive bounds with additional conditions.
-\item \textbf{Search scope.} Cost-optimality is only within the chosen finite chain. A scalar threshold chain is a one-dimensional subset of the full per-exit threshold space, and neither the chain nor the implemented Holm baseline exhausts the continuum of possible policies.
-\item \textbf{Compute model.} The certified compute functional uses the pre-specified cost proxy $c_\ell$. In the CIFAR diagnostic this proxy is analytical MAC count, not measured wall-clock latency. Hardware latency under batching, memory effects, and accelerator scheduling must be evaluated separately before deployment.
+\item \textbf{Calibration assumptions.} The base validity result assumes i.i.d. calibration examples drawn i.i.d. from the deployment distribution. Under covariate shift, Theorem 4 additionally requires an externally justified $L^1$ weight-error budget $\eta$; if that budget is too small or the shift is not represented by the weighting model, the certificate can fail.
+\item \textbf{Loss assumptions.} The concentration bounds require bounded losses. Unbounded or heavy-tailed risk functionals require different concentration arguments, such as truncation or variance-adaptive bounds under additional moment conditions.
+\item \textbf{Search scope.} Cost-optimality is only within the chosen finite candidate family. A scalar threshold chain is a one-dimensional subset of the full per-exit threshold space, and neither the chain nor the implemented Holm baseline exhausts the continuum of possible policies.
+\item \textbf{Multi-chain design.} Multi-chain CARC broadens the searched family only over chains fixed before calibration. Validity does not require those chains to be efficient, but efficiency does. Poorly chosen chains can miss cheaper safe policies, and choosing chains after inspecting calibration risks would introduce multiplicity outside Proposition 1.
+\item \textbf{Compute model.} The certified compute functional uses the pre-specified cost proxy $c_\ell$. In the CIFAR diagnostics this proxy is analytical MAC count, not measured wall-clock latency. Hardware latency under batching, memory effects, and accelerator scheduling must be evaluated separately before deployment.
 \item \textbf{Efficiency assumptions.} Assumption M affects the efficiency interpretation, not validity. If risk is not monotone along the compute chain, the selector remains protected by FWER control, but the chain-order cost bound should not be read as an empirical efficiency guarantee. The reported monotonicity diagnostic is necessary but not sufficient for the true-risk condition.
-\item \textbf{Empirical scope.} The real-cache evidence consists of a feasible digits cascade and a CIFAR-100 diagnostic on a modest branchy CNN. This is not a comprehensive benchmark suite. The CIFAR preregistered target grid is mostly infeasible because the final-exit test risk is $0.3055$, and the feasible CIFAR targets are exploratory.
+\item \textbf{Empirical scope.} The real-cache evidence consists of feasible tabular cascades, a saturated wine boundary case, a feasible CIFAR-10 branchy CNN, and a CIFAR-100 diagnostic on a weaker branchy CNN. These caches test calibration behavior rather than benchmark superiority. The CIFAR-100 fixed target grid is mostly infeasible because the final-exit test risk is $0.3055$, and the feasible CIFAR-100 targets are exploratory.
 \item \textbf{Shift certificate.} Theorem 4 is a conservative sufficient condition. When $\eta$ is large enough to be defensible, the deflated target can make certification infeasible; when $\eta$ is too small, the target can be breached. The budget must therefore come from an external estimator guarantee or be reported as a sensitivity parameter.
-\item \textbf{Single-use protocol.} The guarantee is for one pre-specified run of the procedure. Sweeping multiple $(\alpha,\delta,\text{chain})$ choices on the same calibration set and then selecting the most favorable outcome reintroduces multiplicity outside the stated guarantee.
-\item \textbf{Future validation.} The next empirical step is not additional tuning on the present caches; it is preregistered evaluation on larger early-exit models, language-model cascades, measured hardware latency, and non-synthetic distribution shifts, with infeasibility and compute premium reported alongside violation rates.
+\item \textbf{Single-use protocol.} The guarantee is for one pre-specified run of the procedure. Sweeping multiple $(\alpha,\delta,\text{chain})$ choices on the same calibration set and then selecting the most favorable outcome introduces multiplicity outside the stated guarantee.
+\item \textbf{Future validation.} The next empirical step is evaluation under a standardized protocol on larger early-exit models, language-model cascades, measured hardware latency, and non-synthetic distribution shifts. Each study should report infeasibility, compute premium, and violation rates, rather than only the cheapest selected policy.
 \end{itemize}
 
 \section{Engineering and deployment considerations}
 
 The intended deployment role of CARC is narrow: it is a calibration layer for a fixed adaptive inference system. It can certify a threshold policy, report that no candidate certifies, or quantify the compute premium of certification relative to an uncorrected baseline. It does not improve the trained model, repair poor final-exit accuracy, or guarantee latency under hardware effects not represented in $c_\ell$. The main operational risk is over-trust: an infeasible report, a finite-pool diagnostic, or an exploratory feasible-target check can be mistaken for a population-level deployment guarantee. The manuscript mitigates this risk by stating assumptions at the point of use, separating feasibility from validity, and requiring $(\alpha,\delta)$, the chain, and the split protocol to be fixed before calibration risks are inspected.
 
-\textbf{A worked deployment read.} Table~\ref{tab:digits-confirmatory} can be read as an operator would use it. Suppose the target is at most $10\%$ error with $95\%$ confidence ($\alpha=0.10$, $\delta=0.05$) and $300$ calibration points are available. CARC certifies a policy in every trial at mean relative cost $11.98$ while violating the target in only $0.2\%$ of calibration draws; the uncorrected baseline is about $5.3$ cost units cheaper but violates the $10\%$ target in roughly half of the draws---that gap is the price of the guarantee. Tightening the target to $\alpha=0.05$ with only $100$ calibration points instead gives feasibility $0.139$: CARC usually reports infeasibility, correctly signaling that this system, at this calibration size, cannot certify $5\%$ error and that the operator should collect more data, relax the target, or improve the model rather than deploy on faith. Relaxing the target to $\alpha=0.15$ moves the certified policy to a much cheaper exit (mean cost $4.05$), so the certified operating point tracks the requested risk level.
+\textbf{A worked deployment read.} Table~\ref{tab:digits-confirmatory} can be read as an operator would use it. Suppose the target is at most $10\%$ error with $95\%$ confidence ($\alpha=0.10$, $\delta=0.05$) and $300$ calibration points are available. CARC certifies a policy in every trial at mean relative cost $11.98$ while violating the target in only $0.2\%$ of calibration draws; the uncorrected baseline is about $5.3$ cost units cheaper but violates the $10\%$ target in roughly half of the draws. That gap is the measured compute premium for certification in this cell. Tightening the target to $\alpha=0.05$ with only $100$ calibration points instead gives feasibility $0.139$: CARC reports infeasibility in most splits, indicating that this system, at this calibration size, cannot certify $5\%$ error. The operator must then collect more calibration data, relax the target, improve the model, or decline deployment of the uncertified policy. Relaxing the target to $\alpha=0.15$ moves the certified policy to a much cheaper exit (mean cost $4.05$), so the certified operating point tracks the requested risk level.
 
 \section{Conclusion}
 
-This paper formulates threshold selection for compute-adaptive inference as finite-family risk control. By instantiating LTT on a compute-ordered candidate chain, CARC separates three quantities that are often conflated in validation tuning: risk validity, feasibility of the target for the trained system, and compute efficiency of the certified policy. The theory proves distribution-free validity for certified selectors, characterizes the finite-sample compute band of the fixed-sequence chain under monotone risk, adds a conservative joint risk--compute certificate, and gives an estimated-weight sufficient condition for covariate shift.
+This paper formulates threshold selection for compute-adaptive inference as finite-family risk control. By instantiating LTT on compute-ordered candidate chains, CARC separates three quantities that validation tuning often conflates: finite-sample risk validity, feasibility of the requested target for the trained system, and compute efficiency of the certified policy. The theory proves distribution-free validity for certified selectors, characterizes the finite-sample compute band of the fixed-sequence chain under monotone risk, extends the selector to several pre-specified chains with chain-level error allocation, adds a conservative joint risk--compute certificate, and gives an estimated-weight sufficient condition for covariate shift.
 
-The empirical results support these claims within their stated scope. In simulation with oracle risks, certified selection respects the tested violation levels while naive validation thresholding violates substantially. On the preregistered digits cache, the certificate remains within the tested violation levels on a feasible target grid, whereas naive tuning fails sharply at $\alpha=0.10$. On CIFAR-100, the preregistered target grid is mostly infeasible; the correct interpretation is that the trained branchy model does not support those certified risk targets, not that CARC fails to find a hidden low-risk policy. The main limitation is empirical breadth: larger early-exit networks, language cascades, measured latency, and non-synthetic shift studies remain to be evaluated under the same preregistered protocol. Future work should also replace the conservative range-based compute bound with tighter variance-adaptive or hardware-aware certificates while preserving finite-sample validity.
+The empirical evidence supports three scoped conclusions. First, in controlled simulations with oracle risks, certified selection respects the tested violation levels while naive validation thresholding violates substantially. Second, expanding from a scalar chain to pre-specified multiple chains can reduce certified cost relative to valid full-family baselines while preserving the same error-control principle. Third, infeasibility is an informative output: the digits and CIFAR-10 caches contain feasible targets, whereas the CIFAR-100 fixed grid mostly does not because the trained final exit has test risk $0.3055$. These results support CARC as a calibration layer for fixed adaptive systems, not as a training method or a general guarantee that any early-exit network can meet a requested target.
+
+The main limitations are structural. Validity assumes i.i.d. calibration data unless the covariate-shift certificate is invoked with a defensible $\eta$; the compute-efficiency interpretation of Theorem 2 depends on the chosen chain and Assumption M; the joint compute certificate is conservative because it uses range-based concentration; and the real-cache evidence is limited to tabular cascades plus CIFAR-10/CIFAR-100 branchy CNN caches. Future work should evaluate larger early-exit networks, language-model cascades, measured hardware latency, and non-synthetic distribution shifts under the same standardized evaluation protocol, and should develop tighter variance-adaptive or hardware-aware compute certificates without weakening finite-sample risk control.
 
 \section{Data and code availability}
 
-The current reference implementation covers the p-values, certification procedures, selectors, controlled-simulation scripts, CIFAR cache adapter, tabular-cascade adapter, and cache-based real-data evaluator. The digits real-cache result is summarized in Table~\ref{tab:digits-confirmatory}; the synthetic and CIFAR row-level results are embedded in Appendix~B. The corresponding JSON artifacts are \texttt{results/digits\_tabular\_real\_cache\_eval.json}, \texttt{results/cifar\_branchy\_real\_cache\_eval.json}, and \texttt{results/cifar\_branchy\_real\_cache\_eval\_exploratory.json}. All $(\alpha,\delta,B)$ grids, seeds, split counts, and pass criteria used for reported experiments are specified in the source files or in \texttt{preregistration.md}; exploratory CIFAR cells are labeled separately. The source repository and archival DOI should be inserted here before IEEE Access submission.
+\begin{sloppypar}
+The current reference implementation covers the p-values, certification procedures, scalar-chain and multi-chain selectors, threshold-family builders, controlled-simulation scripts, CIFAR cache adapter, tabular-cascade adapter, and cache-based real-data evaluator. The digits scalar-chain result is summarized in Table~\ref{tab:digits-confirmatory}; the CIFAR-10 multi-chain result is summarized in Table~\ref{tab:cifar10-multichain}; the synthetic and CIFAR-100 scalar-chain row-level results are embedded in Appendix~B. The corresponding JSON artifacts are stored under \path{results/}: \path{digits_tabular_real_cache_eval.json}, \path{e8_multichain_selector.json}, \path{digits_tabular_multichain_eval.json}, \path{breast_cancer_tabular_multichain_eval.json}, \path{wine_tabular_multichain_eval.json}, \path{cifar10_branchy_multichain_eval.json}, \path{cifar_branchy_real_cache_eval.json}, \path{cifar_branchy_real_cache_eval_exploratory.json}, and \path{cifar_branchy_multichain_eval.json}. All $(\alpha,\delta,B)$ grids, seeds, split counts, and pass criteria used for reported experiments are specified in the source files or in \path{preregistration.md}; exploratory CIFAR-100 cells are labeled separately. The reference implementation, cache adapters, and every JSON artifact listed above are provided in the supplementary material accompanying this submission, so all reported headline numbers are independently reproducible from the released code and caches. The public repository URL and the archival DOI assigned at acceptance will be inserted in the camera-ready version.
+\end{sloppypar}
 
 \section*{Acknowledgment}
 
-Author acknowledgments, funding information, and any required disclosure about AI-assisted text generation are to be completed before IEEE Access submission.
+The authors thank their colleagues at Hanbat National University for helpful discussions. \emph{Funding.} [Grant numbers and funding agencies to be inserted by the authors.] \emph{Disclosure of AI assistance.} Generative AI tools were used solely for language editing and did not contribute to the research design, theoretical results, experiments, implementation, or analysis; all technical content was conceived, implemented, and verified by the authors, who take full responsibility for the work.
 
 \onecolumn
-\appendix
+\appendices
 
 \section{Proofs}
 
@@ -720,13 +815,19 @@ C(\hat\tau)-\min_{k:\,R_k\le\alpha}C_k\ \le\ \Lambda_C\,\Delta_n\ =\ O\!\Big(\sq
 
 \emph{(iv) Tighter p-values.} Replacing Hoeffding by Hoeffding--Bentkus or empirical-Bernstein shrinks $\epsilon_n(\delta)$, hence $\Delta_n$, with no change to the argument.
 
-\section{Extended experimental detail}
+\section{Extended Experimental Details}
 
 The controlled-simulation configuration of Section~10.1 uses a synthetic early-exit simulator with $L=5$ exits and a $K=40$ global-threshold chain. The E1/E3 validity study uses $n=1000$ calibration examples and $T=3000$ trials per $(\alpha,\delta)$ cell. The E2/E7 cost comparison uses $n=1000$ and $T=2000$. The E5 joint-control study uses $n=2000$, $T=1000$, $\alpha=0.0888475$, and $\delta=0.10$. The E6 shift study uses $T=400$, $\lambda=2.0$, and a split of $n_1=n_2=2500$.
 
-The digits tabular-cascade confirmation of Section~10.2 uses \texttt{sklearn.datasets.load\_digits}, seed $20260615$, a train/cache split with $899$ cache examples, and a $K=101$ scalar confidence-threshold chain. The exits are Gaussian naive Bayes, logistic regression, and support-vector classification, with relative costs $[1,4,12]$ and full-pool exit accuracies $[0.863,0.968,0.981]$. The preregistered grid uses $\alpha\in\{0.05,0.10,0.15\}$, $\delta\in\{0.05,0.10\}$, calibration sizes $\{100,300\}$, Hoeffding--Bentkus p-values, $T=1000$, and violation denominator ``all''. The JSON artifact is \texttt{results/digits\_tabular\_real\_cache\_eval.json}.
+The multi-chain redesign experiment E8 uses the same simulator with $L=5$, six pre-specified per-exit threshold chains, 30 levels per chain, and 180 candidate policies. Oracle risk and cost are estimated from 250,000 simulator draws. The calibration study uses $n=1000$, $T=1000$, Hoeffding--Bentkus p-values, $\delta\in\{0.05,0.10\}$, and targets $\alpha=R_{\min}+\{0.04,0.08,0.15\}$. The JSON artifact is \texttt{results/e8\_multichain\_selector.json}.
 
-The CIFAR-100 diagnostic in Section~10.3 uses a Branchy ResNet-56-style model with exits after the stem, stage 1, stage 2, and stage 3. The cache contains $n=10000$ test examples, $K=100$ scalar thresholds, top-softmax confidence, 0--1 loss, and cumulative analytical MAC estimates $[443{,}968,\;42{,}911{,}296,\;84{,}331{,}648,\;125{,}753{,}600]$. The checkpoint records epoch 80 and per-exit test accuracies $[0.0646,\;0.3040,\;0.6147,\;0.6945]$. The full-pool chain cost is nondecreasing; the full-pool chain risk has four adjacent increases, maximum adjacent increase $2\times10^{-4}$, and minimum risk $0.3055$. Remaining ImageNet, language-cascade, corruption-suite, and weight-estimation details will be tabulated when those studies are run.
+The digits tabular-cascade scalar-chain confirmation uses \texttt{sklearn.datasets.load\_digits}, seed $20260615$, a train/cache split with $899$ cache examples, and a $K=101$ scalar confidence-threshold chain. The exits are Gaussian naive Bayes, logistic regression, and support-vector classification, with relative costs $[1,4,12]$ and full-pool exit accuracies $[0.863,0.968,0.981]$. The fixed grid uses $\alpha\in\{0.05,0.10,0.15\}$, $\delta\in\{0.05,0.10\}$, calibration sizes $\{100,300\}$, Hoeffding--Bentkus p-values, $T=1000$, and violation denominator ``all''. The JSON artifact is \path{results/digits_tabular_real_cache_eval.json}.
+
+The multi-chain real-cache reanalyses use the existing per-exit scores, losses, and costs stored in each cache, with six deterministic per-exit threshold schedules and 30 levels per chain. The digits multi-chain artifact is \path{results/digits_tabular_multichain_eval.json}. The breast-cancer and wine supporting artifacts are \path{results/breast_cancer_tabular_multichain_eval.json} and \path{results/wine_tabular_multichain_eval.json}; wine is retained as a saturated boundary case, not a main performance claim.
+
+The CIFAR-10 feasible neural-cache benchmark uses the same Branchy ResNet-56-style adapter as the CIFAR-100 diagnostic, with exits after the stem, stage 1, stage 2, and stage 3. The model is trained for 30 epochs with seed $20260616$ and evaluated on the CIFAR-10 test set. The cache contains $n=10000$ examples, four exits, $101$ scalar thresholds, top-softmax confidence, 0--1 loss, and cumulative analytical MAC estimates $[442{,}528,\;42{,}909{,}856,\;84{,}328{,}768,\;125{,}747{,}840]$. Per-exit test accuracies are $[0.2551,\;0.6928,\;0.8750,\;0.8825]$, and the full-cache multi-chain risk floor is about $0.1173$. The multi-chain evaluation uses six deterministic per-exit threshold schedules, 30 levels per chain, $K=180$ policies, $\alpha\in\{0.12,0.15,0.20,0.25,0.30\}$, $\delta\in\{0.05,0.10\}$, calibration sizes $\{500,2000\}$, Hoeffding--Bentkus p-values, $T=1000$, and violation denominator ``all''. The JSON artifact is \path{results/cifar10_branchy_multichain_eval.json}.
+
+The CIFAR-100 diagnostic uses a Branchy ResNet-56-style model with exits after the stem, stage 1, stage 2, and stage 3. The cache contains $n=10000$ test examples, $K=100$ scalar thresholds, top-softmax confidence, 0--1 loss, and cumulative analytical MAC estimates $[443{,}968,\;42{,}911{,}296,\;84{,}331{,}648,\;125{,}753{,}600]$. The checkpoint records epoch 80 and per-exit test accuracies $[0.0646,\;0.3040,\;0.6147,\;0.6945]$. The full-pool chain cost is nondecreasing; the full-pool chain risk has four adjacent increases, maximum adjacent increase $2\times10^{-4}$, and minimum risk $0.3055$. The CIFAR multi-chain reanalysis uses the same cache with 180 candidate policies; its JSON artifact is \path{results/cifar_branchy_multichain_eval.json}.
 
 \subsection{Embedded numerical results}
 
@@ -735,16 +836,14 @@ Tables~\ref{tab:embedded-e1}--\ref{tab:embedded-cifar-exploratory} embed the syn
 \begingroup
 \scriptsize
 \setlength{\tabcolsep}{2pt}
-\begin{longtable}{@{}lllllllll@{}}
-\caption{Synthetic E1/E3 validity and naive-baseline results. Violation entries are counts/rates over all $T=3000$ trials.}\label{tab:embedded-e1}\\
+\begin{table}[p]
+\centering
+\caption{Synthetic E1/E3 validity and naive-baseline results. Violation entries are counts/rates over all $T=3000$ trials.}
+\label{tab:embedded-e1}
+\begin{tabular}{@{}lllllllll@{}}
 \toprule
 $\alpha$ & $\delta$ & Chain feas. & Chain viol. & Chain CI & Chain cost & Naive feas. & Naive viol. & Naive cost \\
 \midrule
-\endfirsthead
-\toprule
-$\alpha$ & $\delta$ & Chain feas. & Chain viol. & Chain CI & Chain cost & Naive feas. & Naive viol. & Naive cost \\
-\midrule
-\endhead
 0.079 & 0.05 & 2578/3000 (0.859) & 3/3000 (0.001) & [0.000,0.003] & 3.509 & 3000/3000 (1.000) & 694/3000 (0.231) & 3.383 \\
 0.079 & 0.10 & 2734/3000 (0.911) & 5/3000 (0.002) & [0.001,0.004] & 3.492 & 3000/3000 (1.000) & 694/3000 (0.231) & 3.383 \\
 0.119 & 0.05 & 3000/3000 (1.000) & 18/3000 (0.006) & [0.004,0.009] & 3.276 & 3000/3000 (1.000) & 1054/3000 (0.351) & 3.183 \\
@@ -752,18 +851,17 @@ $\alpha$ & $\delta$ & Chain feas. & Chain viol. & Chain CI & Chain cost & Naive 
 0.189 & 0.05 & 3000/3000 (1.000) & 16/3000 (0.005) & [0.003,0.009] & 3.024 & 3000/3000 (1.000) & 912/3000 (0.304) & 2.944 \\
 0.189 & 0.10 & 3000/3000 (1.000) & 35/3000 (0.012) & [0.008,0.016] & 3.011 & 3000/3000 (1.000) & 912/3000 (0.304) & 2.944 \\
 \bottomrule
-\end{longtable}
+\end{tabular}
+\end{table}
 
-\begin{longtable}{@{}lllllllll@{}}
-\caption{Synthetic E2/E7 chain, Holm, Bonferroni, and p-value ablation. Here $\alpha=0.1188475$, $\delta=0.10$, $n=1000$, and $T=2000$.}\label{tab:embedded-e2}\\
+\begin{table}[p]
+\centering
+\caption{Synthetic E2/E7 chain, Holm, Bonferroni, and p-value ablation. Here $\alpha=0.1188475$, $\delta=0.10$, $n=1000$, and $T=2000$.}
+\label{tab:embedded-e2}
+\begin{tabular}{@{}lllllllll@{}}
 \toprule
 Method & p-value & Feas. & Viol. & CI & Mean cost & $n$ & $T$ & $\alpha$ \\
 \midrule
-\endfirsthead
-\toprule
-Method & p-value & Feas. & Viol. & CI & Mean cost & $n$ & $T$ & $\alpha$ \\
-\midrule
-\endhead
 chain & hb & 2000/2000 (1.000) & 32/2000 (0.016) & [0.011,0.023] & 3.260 & 1000 & 2000 & 0.119 \\
 chain & hoeffding & 2000/2000 (1.000) & 0/2000 (0.000) & [0.000,0.002] & 3.344 & 1000 & 2000 & 0.119 \\
 holm & hb & 2000/2000 (1.000) & 1/2000 (0.001) & [0.000,0.003] & 3.311 & 1000 & 2000 & 0.119 \\
@@ -771,33 +869,31 @@ holm & hoeffding & 2000/2000 (1.000) & 0/2000 (0.000) & [0.000,0.002] & 3.459 & 
 bonferroni & hb & 2000/2000 (1.000) & 1/2000 (0.001) & [0.000,0.003] & 3.326 & 1000 & 2000 & 0.119 \\
 bonferroni & hoeffding & 2000/2000 (1.000) & 0/2000 (0.000) & [0.000,0.002] & 3.487 & 1000 & 2000 & 0.119 \\
 \bottomrule
-\end{longtable}
+\end{tabular}
+\end{table}
 
-\begin{longtable}{@{}llllllll@{}}
-\caption{Synthetic E5 joint risk--compute control. The oracle cheapest safe cost is $3.312705$; $\alpha=0.0888475$, $\delta=0.10$, $n=2000$, and $T=1000$.}\label{tab:embedded-e5}\\
+\begin{table}[p]
+\centering
+\caption{Synthetic E5 joint risk--compute control. The oracle cheapest safe cost is $3.312705$; $\alpha=0.0888475$, $\delta=0.10$, $n=2000$, and $T=1000$.}
+\label{tab:embedded-e5}
+\begin{tabular}{@{}llllllll@{}}
 \toprule
 Budget case & $B$ & Oracle feasible & Feas. & Risk viol. & Risk CI & Mean UCB & Mean true cost \\
 \midrule
-\endfirsthead
-\toprule
-Budget case & $B$ & Oracle feasible & Feas. & Risk viol. & Risk CI & Mean UCB & Mean true cost \\
-\midrule
-\endhead
 slack & 4.641 & yes & 1000/1000 (1.000) & 0/1000 (0.000) & [0.000,0.004] & 3.620 & 3.387 \\
 tight\_oracle\_feasible & 3.363 & yes & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
 \bottomrule
-\end{longtable}
+\end{tabular}
+\end{table}
 
-\begin{longtable}{@{}llllllllll@{}}
-\caption{Synthetic E6 shift results. Weighted-arm violation rates are conditional on feasible selections; when feasibility is zero, the rate is not applicable.}\label{tab:embedded-e6}\\
+\begin{table}[p]
+\centering
+\caption{Synthetic E6 shift results. Weighted-arm violation rates are conditional on feasible selections; when feasibility is zero, the rate is not applicable.}
+\label{tab:embedded-e6}
+\begin{tabular}{@{}llllllllll@{}}
 \toprule
 Arm & $\alpha$ & $\eta$ & $\|\hat w-w\|_1$ & $(\star)$ & Feas. & Viol. & CI & $\delta$ & Note \\
 \midrule
-\endfirsthead
-\toprule
-Arm & $\alpha$ & $\eta$ & $\|\hat w-w\|_1$ & $(\star)$ & Feas. & Viol. & CI & $\delta$ & Note \\
-\midrule
-\endhead
 unweighted & 0.161 & -- & -- & no & 400/400 (1.000) & 350/400 (0.875) & [0.839,0.906] & 0.10 & source-calibrated \\
 estimated & -- & 0.00 & 0.060 & no & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & eta sweep \\
 exact & -- & 0.00 & 0.000 & yes & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & oracle weights \\
@@ -811,18 +907,17 @@ estimated & -- & 0.12 & 0.060 & yes & 0/400 (0.000) & 0/0 (--) & [0.000,0.975] &
 exact & -- & 0.12 & 0.000 & yes & 400/400 (1.000) & 0/400 (0.000) & [0.000,0.009] & -- & oracle weights \\
 biased & 0.091 & 0.02 & 0.351 & no & 400/400 (1.000) & 358/400 (0.895) & [0.861,0.923] & 0.10 & failure mode \\
 \bottomrule
-\end{longtable}
+\end{tabular}
+\end{table}
 
-\begin{longtable}{@{}llllllllll@{}}
-\caption{CIFAR-100 pre-registered finite-pool cache diagnostic. The run uses HB p-values, $T=1000$, violation denominator ``all'', scalar top-softmax thresholds on a $K=100$ chain, and analytical MAC estimates. None of the pre-registered targets has a truly safe full-pool chain configuration because the minimum full-pool chain risk is $0.3055$. Cells with $\alpha\in\{0.05,0.10,0.20\}$ are condensed into a single line because every such row is identically zero; the informative $\alpha=0.30$ cells are listed in full.}\label{tab:embedded-cifar-preregistered}\\
+\begin{table}[p]
+\centering
+\caption{CIFAR-100 fixed-grid finite-pool cache diagnostic. The run uses HB p-values, $T=1000$, violation denominator ``all'', scalar top-softmax thresholds on a $K=100$ chain, and analytical MAC estimates. None of the pre-defined targets has a truly safe full-pool chain configuration because the minimum full-pool chain risk is $0.3055$. Cells with $\alpha\in\{0.05,0.10,0.20\}$ are condensed into a single line because every such row is identically zero; the informative $\alpha=0.30$ cells are listed in full.}
+\label{tab:embedded-cifar-fixed-grid}
+\begin{tabular}{@{}llllllllll@{}}
 \toprule
 $\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Risk & Cost (M MACs) \\
 \midrule
-\endfirsthead
-\toprule
-$\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Risk & Cost (M MACs) \\
-\midrule
-\endhead
 \multicolumn{10}{@{}p{0.95\linewidth}@{}}{\emph{For every cell with $\alpha\in\{0.05,0.10,0.20\}$---all four methods, both $n_{cal}\in\{500,2000\}$, and both $\delta\in\{0.05,0.10\}$ (48 rows)---feasibility and violation are $0/1000$ (CI $[0.000,0.004]$) and no policy is selected, since the minimum full-pool chain risk $0.3055$ exceeds each such $\alpha$: no configuration certifies, and naive tuning never finds an empirically safe policy. The informative $\alpha=0.30$ cells are listed in full below.}} \\
 \midrule
 0.30 & 0.05 & 500 & 9500 & chain & 4/1000 (0.004) & 4/1000 (0.004) & [0.001,0.010] & 0.311 & 112.11 \\
@@ -842,18 +937,17 @@ $\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Ris
 0.30 & 0.10 & 2000 & 8000 & bonferroni & 0/1000 (0.000) & 0/1000 (0.000) & [0.000,0.004] & -- & -- \\
 0.30 & 0.10 & 2000 & 8000 & naive & 302/1000 (0.302) & 302/1000 (0.302) & [0.274,0.332] & 0.314 & 110.88 \\
 \bottomrule
-\end{longtable}
+\end{tabular}
+\end{table}
 
-\begin{longtable}{@{}llllllllll@{}}
-\caption{CIFAR-100 exploratory feasible-target finite-pool cache diagnostic. This post hoc run uses HB p-values, $T=1000$, violation denominator ``all'', the same cache and chain as Table~\ref{tab:embedded-cifar-preregistered}, and targets $\alpha\in\{0.35,0.40\}$.}\label{tab:embedded-cifar-exploratory}\\
+\begin{table}[p]
+\centering
+\caption{CIFAR-100 exploratory feasible-target finite-pool cache diagnostic. This post hoc run uses HB p-values, $T=1000$, violation denominator ``all'', the same cache and chain as Table~\ref{tab:embedded-cifar-fixed-grid}, and targets $\alpha\in\{0.35,0.40\}$.}
+\label{tab:embedded-cifar-exploratory}
+\begin{tabular}{@{}llllllllll@{}}
 \toprule
 $\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Risk & Cost (M MACs) \\
 \midrule
-\endfirsthead
-\toprule
-$\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Risk & Cost (M MACs) \\
-\midrule
-\endhead
 0.35 & 0.05 & 500 & 9500 & chain & 484/1000 (0.484) & 17/1000 (0.017) & [0.010,0.027] & 0.321 & 105.30 \\
 0.35 & 0.05 & 500 & 9500 & holm & 75/1000 (0.075) & 1/1000 (0.001) & [0.000,0.006] & 0.318 & 106.79 \\
 0.35 & 0.05 & 500 & 9500 & bonferroni & 75/1000 (0.075) & 1/1000 (0.001) & [0.000,0.006] & 0.317 & 107.42 \\
@@ -887,7 +981,8 @@ $\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Ris
 0.40 & 0.10 & 2000 & 8000 & bonferroni & 1000/1000 (1.000) & 0/1000 (0.000) & [0.000,0.004] & 0.361 & 89.33 \\
 0.40 & 0.10 & 2000 & 8000 & naive & 1000/1000 (1.000) & 445/1000 (0.445) & [0.414,0.476] & 0.398 & 81.53 \\
 \bottomrule
-\end{longtable}
+\end{tabular}
+\end{table}
 \endgroup
 
 \EOD
@@ -904,5 +999,4 @@ $\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Ris
 \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{figures/Lee.jpg}}]{Ahyun Lee} received the B.S. degree in Communication Arts from Kwangwoon University, Seoul, South Korea, in 2008, the M.S. degree in Computer Vision from Chung-Ang University, Seoul, in 2011, and the Ph.D. degree in Computer Science from the University of Science and Technology (UST), Daejeon, South Korea, in 2016. From 2011 to 2012, he was an Engineer with LG Electronics Inc., Pyeongtaek, South Korea. From 2016 to 2023, he was a Researcher with the Electronics and Telecommunications Research Institute (ETRI), Daejeon. From March 2023 to August 2025, he was with the Department of Metaverse and Game at Soonchunhyang University. Since September 2025, he has been an Assistant Professor with the Department of Intelligence Media Engineering at Hanbat National University, Daejeon, South Korea. His research interests include GIS, digital twins, computer vision, augmented reality (AR), virtual reality (VR), robotics, and the metaverse.
 \end{IEEEbiography}
 
-\EOD
 \end{document}

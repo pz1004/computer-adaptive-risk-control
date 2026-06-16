@@ -36,7 +36,16 @@ def _pvals_from_losses(loss_matrix: np.ndarray, alpha: float, pvalue: str) -> np
     return out
 
 
-def select_risk(loss_matrix, costs, alpha, delta, method="chain", pvalue="hb"):
+def select_risk(
+    loss_matrix,
+    costs,
+    alpha,
+    delta,
+    method="chain",
+    pvalue="hb",
+    chains=None,
+    chain_weights=None,
+):
     """Risk-only certificate (P1): cheapest config with R(tau) <= alpha at confidence 1-delta."""
     loss_matrix = np.asarray(loss_matrix, dtype=float)
     costs = np.asarray(costs, dtype=float)
@@ -47,6 +56,10 @@ def select_risk(loss_matrix, costs, alpha, delta, method="chain", pvalue="hb"):
     if method == "chain":
         order = list(range(K - 1, -1, -1))            # expensive -> cheap
         certified = ct.fixed_sequence_chain(pvals, delta, order)
+    elif method == "multichain":
+        if chains is None:
+            raise ValueError("method='multichain' requires chains")
+        certified = ct.multi_chain(pvals, delta, chains, weights=chain_weights)
     elif method == "bonferroni":
         certified = ct.bonferroni(pvals, delta)
     elif method == "holm":
@@ -57,8 +70,18 @@ def select_risk(loss_matrix, costs, alpha, delta, method="chain", pvalue="hb"):
     if not certified:
         return dict(selected=None, certified=set(), feasible=False, rhat=rhat, pvals=pvals, extra={})
     selected = min(certified, key=lambda k: costs[k])   # cheapest certified
+    extra = {}
+    if method == "multichain":
+        extra = {
+            "num_chains": len(chains),
+            "chain_weights": (
+                np.full(len(chains), 1.0 / len(chains)).tolist()
+                if chain_weights is None
+                else np.asarray(chain_weights, dtype=float).tolist()
+            ),
+        }
     return dict(selected=int(selected), certified=certified, feasible=True,
-                rhat=rhat, pvals=pvals, extra={})
+                rhat=rhat, pvals=pvals, extra=extra)
 
 
 def select_dual(loss_matrix, cost_matrix, alpha, delta, budget,

@@ -13,7 +13,9 @@ from pathlib import Path
 import numpy as np
 
 from carc import select_naive, select_risk
+from carc.chain import build_threshold_family
 from experiments.common import clopper_pearson, git_sha, mean_or_none, write_json
+from experiments.multichain_family import build_multichain_thresholds
 
 
 def load_cache(path: str | Path) -> dict:
@@ -28,6 +30,9 @@ def load_cache(path: str | Path) -> dict:
         "thresholds": data["thresholds"].astype(float),
         "meta": json.loads(str(data["meta_json"])),
     }
+    for optional in ("scores", "loss", "exit_cost"):
+        if optional in data:
+            cache[optional] = data[optional].astype(float)
     if cache["loss_matrix"].shape != cache["cost_matrix"].shape:
         raise ValueError("loss_matrix and cost_matrix shapes differ")
     return cache
@@ -59,13 +64,44 @@ def monotonicity_diagnostic(loss_matrix: np.ndarray, cost_matrix: np.ndarray) ->
 
 def run(args) -> dict:
     cache = load_cache(args.cache)
-    loss_matrix = cache["loss_matrix"]
-    cost_matrix = cache["cost_matrix"]
+    if args.family == "scalar":
+        loss_matrix = cache["loss_matrix"]
+        cost_matrix = cache["cost_matrix"]
+        chains = None
+        chain_names = None
+        scalar_chain_idx = None
+        methods = ["chain", "holm", "bonferroni"]
+        thresholds_meta = {"family": "scalar", "thresholds": cache["thresholds"].tolist()}
+    else:
+        missing = [key for key in ("scores", "loss", "exit_cost") if key not in cache]
+        if missing:
+            raise ValueError(f"--family multichain requires cache arrays: {missing}")
+        threshold_vectors, chains, chain_names = build_multichain_thresholds(
+            num_exits=cache["scores"].shape[1],
+            levels_per_chain=args.levels_per_chain,
+            threshold_low=args.threshold_low,
+            threshold_high=args.threshold_high,
+        )
+        loss_matrix, cost_matrix = build_threshold_family(
+            cache["scores"],
+            cache["loss"],
+            cache["exit_cost"],
+            threshold_vectors,
+        )
+        scalar_chain_idx = np.array(sorted(chains[0]), dtype=int)
+        methods = ["scalar_chain", "multichain", "holm", "bonferroni"]
+        thresholds_meta = {
+            "family": "multichain",
+            "levels_per_chain": int(args.levels_per_chain),
+            "threshold_low": float(args.threshold_low),
+            "threshold_high": float(args.threshold_high),
+            "threshold_vectors_shape": list(threshold_vectors.shape),
+            "chain_names": chain_names,
+        }
     n_total, K = loss_matrix.shape
     alphas = parse_float_list(args.alphas)
     deltas = parse_float_list(args.deltas)
     calib_sizes = parse_int_list(args.calib_sizes)
-    methods = ["chain", "holm", "bonferroni"]
     rng = np.random.default_rng(args.seed)
     rows = []
 
@@ -90,9 +126,32 @@ def run(args) -> dict:
                     test_cost = cost_matrix[test_idx]
                     calib_cost_mean = calib_cost.mean(axis=0)
                     for method in methods:
-                        res = select_risk(calib_loss, calib_cost_mean, alpha, delta, method=method, pvalue=args.pvalue)
+                        if method == "scalar_chain":
+                            res = select_risk(
+                                calib_loss[:, scalar_chain_idx],
+                                calib_cost_mean[scalar_chain_idx],
+                                alpha,
+                                delta,
+                                method="chain",
+                                pvalue=args.pvalue,
+                            )
+                            selected = None if not res["feasible"] else int(scalar_chain_idx[res["selected"]])
+                        elif method == "multichain":
+                            res = select_risk(
+                                calib_loss,
+                                calib_cost_mean,
+                                alpha,
+                                delta,
+                                method="multichain",
+                                pvalue=args.pvalue,
+                                chains=chains,
+                            )
+                            selected = None if not res["feasible"] else int(res["selected"])
+                        else:
+                            res = select_risk(calib_loss, calib_cost_mean, alpha, delta, method=method, pvalue=args.pvalue)
+                            selected = None if not res["feasible"] else int(res["selected"])
                         if res["feasible"]:
-                            k = res["selected"]
+                            k = selected
                             risk = float(test_loss[:, k].mean())
                             cost = float(test_cost[:, k].mean())
                             accum[method]["feas"] += 1
@@ -148,6 +207,7 @@ def run(args) -> dict:
             "calib_sizes": calib_sizes,
             "pvalue": args.pvalue,
             "violation_denominator": args.violation_denominator,
+            "threshold_family": thresholds_meta,
         },
         "monotonicity": monotonicity_diagnostic(loss_matrix, cost_matrix),
         "rows": rows,
@@ -165,6 +225,10 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--pvalue", choices=["hb", "hoeffding", "eb"], default="hb")
     parser.add_argument("--violation-denominator", choices=["all", "feasible"], default="all")
+    parser.add_argument("--family", choices=["scalar", "multichain"], default="scalar")
+    parser.add_argument("--levels-per-chain", type=int, default=30)
+    parser.add_argument("--threshold-low", type=float, default=0.0)
+    parser.add_argument("--threshold-high", type=float, default=1.0)
     args = parser.parse_args()
     payload = run(args)
     out = write_json(args.out, payload)

@@ -143,3 +143,16 @@
 - Ran style-marker checks: no `groundbreaking`, `revolutionary`, `silently`, `honest`, `turnkey`, `obvious`, or standalone `very` markers remain in `main.tex` or extracted PDF text.
 - Ran `python -m tests.test_carc`; all tests passed.
 - Ran `git diff --check`; no whitespace errors.
+
+## IEEE Access Pre-Submission Review Notes
+- Review target: `main.tex` as the active IEEE Access manuscript source; `main.pdf` as the current compiled artifact.
+- User constraints: final answer must include only weaknesses, current acceptance probability, high-yield recommendations, and post-revision acceptance probability; no recommendation may require new physical or computational experiments.
+- Official IEEE Access guidance checked on 2026-06-15: submissions that do not follow the guidelines can be returned to draft or immediately rejected; source and PDF must match; all authors must appear in both source and PDF; all-author biographies are required; poor grammar can trigger immediate rejection; acronyms must be defined at first use; 3--10 keywords are required; IEEE Access recommends under 20 pages for readability.
+- `main.tex` has 908 lines and 13,254 words; `main.pdf` has 18 pages.
+- Administrative blocker: `main.pdf` is stale relative to `main.tex`. Extracted PDF text still contains `AUTHOR NAME(S) TO BE COMPLETED`, placeholder affiliation/corresponding-author text, and placeholder funding/AI-disclosure text, while `main.tex` now contains named authors and biographies.
+- Build blocker: `tectonic --keep-logs --keep-intermediates main.tex` fails locally at line 2 because `ieeeaccess.cls` is not installed in the repo/environment.
+- Source-assets blocker: `main.tex` references `figures/Jang.jpg`, `figures/Woo.jpg`, and `figures/Lee.jpg`, but those files are absent from `figures/`.
+- Source placeholders remain: fake DOI `10.1109/ACCESS.2026.DOI`; data/code statement says the source repository and archival DOI should be inserted before submission; acknowledgment/funding/AI disclosure text remains to be completed.
+- Evidence check: `main.tex` cites 22 unique keys and `main.bib` contains 22 entries.
+- Result check: `results/digits_tabular_real_cache_eval.json` has chain violation range `0`--`0.051` across 12 chain rows and naive violation max `0.571`; CIFAR preregistered chain violation range is `0`--`0.013`, naive max `0.457`, and CIFAR exploratory chain violation range is `0.012`--`0.038`, naive range `0.441`--`0.529`.
+- Scientific-review risk: the manuscript is honest about empirical scope, but the positive real-cache evidence is a scikit-learn digits tabular cascade, while the neural early-exit CIFAR-100 case is primarily an infeasibility diagnostic with exploratory feasible-target cells.

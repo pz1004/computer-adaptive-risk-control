@@ -5,6 +5,10 @@ Real run example:
   python -m adapters.cifar_branchy --dataset cifar100 --download --epochs 80 \
     --checkpoint checkpoints/cifar_branchy_resnet56.pt --out cache/cifar_branchy_resnet56.npz
 
+Feasible neural benchmark example:
+  python -m adapters.cifar_branchy --dataset cifar10 --download --epochs 30 \
+    --checkpoint checkpoints/cifar10_branchy_resnet56.pt --out cache/cifar10_branchy_resnet56.npz
+
 Smoke run example:
   python -m adapters.cifar_branchy --dataset fake --epochs 0 --allow-random-init \
     --max-train-samples 64 --max-cache-samples 64 --batch-size 16 \
@@ -29,6 +33,8 @@ from carc.chain import build_chain
 
 CIFAR100_MEAN = (0.5071, 0.4867, 0.4408)
 CIFAR100_STD = (0.2675, 0.2565, 0.2761)
+CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
+CIFAR10_STD = (0.2470, 0.2435, 0.2616)
 
 
 def git_sha() -> str | None:
@@ -176,26 +182,37 @@ def subset_dataset(dataset, max_samples: int | None, seed: int):
     return Subset(dataset, idx.tolist())
 
 
+def dataset_spec(name: str) -> tuple[type, tuple[float, float, float], tuple[float, float, float], int]:
+    if name == "cifar100":
+        return datasets.CIFAR100, CIFAR100_MEAN, CIFAR100_STD, 100
+    if name == "cifar10":
+        return datasets.CIFAR10, CIFAR10_MEAN, CIFAR10_STD, 10
+    if name == "fake":
+        return datasets.FakeData, CIFAR100_MEAN, CIFAR100_STD, 100
+    raise ValueError(f"unknown dataset {name}")
+
+
 def make_datasets(args):
-    if args.dataset == "cifar100":
+    dataset_cls, mean, std, num_classes = dataset_spec(args.dataset)
+    if args.dataset in {"cifar100", "cifar10"}:
         train_tf = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize(CIFAR100_MEAN, CIFAR100_STD),
+            transforms.Normalize(mean, std),
         ])
         eval_tf = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(CIFAR100_MEAN, CIFAR100_STD),
+            transforms.Normalize(mean, std),
         ])
-        train = datasets.CIFAR100(args.data_root, train=True, download=args.download, transform=train_tf)
-        cache = datasets.CIFAR100(args.data_root, train=False, download=args.download, transform=eval_tf)
+        train = dataset_cls(args.data_root, train=True, download=args.download, transform=train_tf)
+        cache = dataset_cls(args.data_root, train=False, download=args.download, transform=eval_tf)
     elif args.dataset == "fake":
         tf = transforms.ToTensor()
         train_size = args.max_train_samples if args.max_train_samples and args.max_train_samples > 0 else 128
         cache_size = args.max_cache_samples if args.max_cache_samples and args.max_cache_samples > 0 else 128
-        train = datasets.FakeData(size=train_size, image_size=(3, 32, 32), num_classes=100, transform=tf)
-        cache = datasets.FakeData(size=cache_size, image_size=(3, 32, 32), num_classes=100, transform=tf, random_offset=10_000)
+        train = dataset_cls(size=train_size, image_size=(3, 32, 32), num_classes=num_classes, transform=tf)
+        cache = dataset_cls(size=cache_size, image_size=(3, 32, 32), num_classes=num_classes, transform=tf, random_offset=10_000)
     else:
         raise ValueError(f"unknown dataset {args.dataset}")
     return (
@@ -311,7 +328,7 @@ def validate_cache(scores, loss, exit_costs, thresholds, loss_matrix, cost_matri
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", choices=["cifar100", "fake"], default="cifar100")
+    parser.add_argument("--dataset", choices=["cifar10", "cifar100", "fake"], default="cifar100")
     parser.add_argument("--data-root", default="data")
     parser.add_argument("--download", action="store_true")
     parser.add_argument("--out", default="cache/cifar_branchy_resnet56.npz")
@@ -333,19 +350,26 @@ def main() -> None:
     parser.add_argument("--save-every", type=int, default=1)
     args = parser.parse_args()
 
+    if args.dataset == "cifar10":
+        if args.checkpoint == parser.get_default("checkpoint"):
+            args.checkpoint = "checkpoints/cifar10_branchy_resnet56.pt"
+        if args.out == parser.get_default("out"):
+            args.out = "cache/cifar10_branchy_resnet56.npz"
+
     set_seed(args.seed)
     if args.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device(args.device)
 
+    _dataset_cls, _mean, _std, num_classes = dataset_spec(args.dataset)
     train_set, cache_set = make_datasets(args)
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True,
                               num_workers=args.num_workers, pin_memory=device.type == "cuda")
     cache_loader = DataLoader(cache_set, batch_size=args.batch_size, shuffle=False,
                               num_workers=args.num_workers, pin_memory=device.type == "cuda")
 
-    model = BranchyResNet56(num_classes=100).to(device)
+    model = BranchyResNet56(num_classes=num_classes).to(device)
     ckpt_path = Path(args.checkpoint)
     loaded_checkpoint = False
     checkpoint_epoch = 0
@@ -362,9 +386,10 @@ def main() -> None:
         )
 
     train(model, train_loader, args, device, ckpt_path, checkpoint_epoch)
+    completed_epoch = int(args.epochs if args.epochs > checkpoint_epoch else checkpoint_epoch)
 
     scores, correct, loss, labels, preds = collect_cache(model, cache_loader, device)
-    exit_costs = estimate_exit_costs(num_classes=100)
+    exit_costs = estimate_exit_costs(num_classes=num_classes)
     thresholds = np.linspace(args.threshold_low, args.threshold_high, args.threshold_count, dtype=float)
     loss_matrix, cost_matrix = build_chain(scores, loss, exit_costs, thresholds)
     validation = validate_cache(scores, loss, exit_costs, thresholds, loss_matrix, cost_matrix)
@@ -372,13 +397,15 @@ def main() -> None:
     meta = {
         "dataset": args.dataset,
         "model": "branchy_resnet56_cifar",
-        "num_classes": 100,
+        "num_classes": int(num_classes),
         "seed": args.seed,
         "git_sha": git_sha(),
         "device": str(device),
         "checkpoint": str(ckpt_path),
         "loaded_checkpoint": loaded_checkpoint,
-        "checkpoint_epoch": checkpoint_epoch,
+        "loaded_checkpoint_epoch": checkpoint_epoch,
+        "checkpoint_epoch": completed_epoch,
+        "completed_epoch": completed_epoch,
         "epochs": args.epochs,
         "train_size": len(train_set),
         "cache_size": len(cache_set),

@@ -78,3 +78,65 @@ Retarget the CARC manuscript from anonymous TMLR submission form to an IEEE Acce
 
 ## Status
 **Completed with template caveat** - `main.tex`, `main.pdf`, the digits confirmatory artifact, README, completion guide, preregistration, notes, and plan now target IEEE Access, and `main.tex` has received a venue-facing technical editorial rewrite. A clean source rebuild from the repo still requires installing the official IEEE Access template files (`ieeeaccess.cls` and dependencies).
+
+---
+
+# Task Plan: IEEE Access Pre-Submission Critical Review
+
+## Goal
+Produce a senior-editor-style pre-submission critique of the current IEEE Access manuscript, limited to weaknesses, current acceptance probability, high-yield non-experimental revisions, and post-revision acceptance probability.
+
+## Phases
+- [x] Phase 1: Confirm active manuscript and review constraints
+- [x] Phase 2: Read manuscript structure, claims, evidence artifacts, and IEEE Access requirements
+- [x] Phase 3: Audit weaknesses and desk-reject/major-revision risks
+- [x] Phase 4: Deliver constrained final review
+
+## Priorities
+- P0: Do not recommend additional physical or computational experiments.
+- P0: Separate administrative IEEE Access readiness issues from scientific-review issues.
+- P0: Ground criticisms in `main.tex`, `main.pdf`, local result artifacts, and official IEEE Access guidance.
+- P1: Prefer concrete textual, structural, or theoretical revisions that can be done before submission.
+
+## Status
+**Completed** - constrained IEEE Access readiness review prepared from `main.tex`, `main.pdf`, local result artifacts, and current official IEEE Access guidance.
+
+---
+
+# Task Plan: Multi-Chain CARC Redesign and Broad Evidence
+
+## Goal
+Redesign CARC with a clearly stronger certified selector, prove its validity, and build broad synthetic and real-cache evidence for an IEEE Access-ready revision.
+
+## Phases
+- [x] Phase 1: Inspect current selector, tests, and experiment architecture
+- [x] Phase 2: Implement the first redesigned selector with unit tests
+- [x] Phase 3: Add fast synthetic evidence comparing redesigned selector to chain, Holm, Bonferroni, and naive
+- [x] Phase 4: Extend cache construction/evaluation so richer real-cache policy families can exercise the redesigned selector
+- [x] Phase 5: Run broad evidence on at least one feasible neural early-exit/cascade cache beyond digits and the current CIFAR infeasibility diagnostic
+- [x] Phase 6: Add theorem/proof and evidence summaries to `main.tex` only after result artifacts exist
+- [x] Phase 7: Rebuild/check package and reassess IEEE Access readiness
+- [x] Phase 8: Replace or cross-check the mirrored IEEE Access class/assets against the official IEEE Access ZIP before final upload
+- [x] Phase 9: Final scientific completion audit and acceptance-readiness estimate
+
+## Redesign Candidate
+- Multi-chain CARC: pre-specify `M` compute-ordered chains inside a larger candidate family, run fixed-sequence testing within each chain at level `delta / M`, union the certified sets, and choose the cheapest certified configuration.
+
+## Why This Is Worth Implementing First
+- Validity proof is direct: each chain has FWER at `delta / M`; a union bound over `M` chains gives total FWER at `delta`.
+- It keeps the existing adapter contract (`loss_matrix`, `cost_matrix`) and adds only chain metadata.
+- It can search a richer threshold family than the current scalar chain while avoiding the full `delta / K` penalty of Bonferroni over all configurations when `M << K`.
+
+## Current Decision
+- Use the newly trained CIFAR-10 branchy cache as the feasible neural-cache benchmark for the multi-chain redesign. Keep CIFAR-100 as the infeasibility stress test because its preregistered target grid remains below the finite-pool risk frontier.
+- Treat the local IEEE Access PDF rebuild as a diagnostic package gate, not final template provenance, because the class/assets in the repo came from a public mirror after official shell downloads were blocked.
+- Replace the mirrored template with the official IEEE Access 2026-05-13 LaTeX bundle. Keep only a minimal non-pdfTeX `spotcolor` guard in `ieeeaccess.cls` so Tectonic can build locally; pdfTeX still follows the official spot-color path.
+- Treat DOI, repository/archive DOI, and acknowledgment/funding/AI-disclosure text as author-supplied upload metadata. Do not invent them or count them as scientific-redesign gaps.
+
+## Deferred User-Supplied Upload Metadata
+- Manuscript DOI or publisher placeholder policy.
+- Public source repository URL and archival DOI, if the authors choose to provide them before submission.
+- Final acknowledgments, funding, and AI-disclosure wording.
+
+## Status
+**Completed for the scientific redesign objective** - Multi-chain certification, tests, E8 synthetic evidence, multi-chain real-cache evaluation support, manuscript proof/evidence summaries, a newly trained CIFAR-10 feasible neural-cache benchmark, official IEEE Access template files, a successful local IEEE Access PDF rebuild, and final acceptance-readiness audit now exist. Remaining actions are author-supplied upload metadata, not redesign/evidence work.

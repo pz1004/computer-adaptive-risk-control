@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from carc import pvalues as pv
 from carc import certify as ct
 from carc import selector as sel
-from carc.chain import build_chain
+from carc.chain import build_chain, build_threshold_family
 from carc.simulate import EarlyExitSim, fit_weights_logistic
 
 RNG = np.random.default_rng(0)
@@ -69,7 +69,46 @@ def test_certify_structure():
     if fs:
         idxs = sorted(fs)
         assert idxs == list(range(idxs[0], 20)), "fixed-sequence must be a contiguous top suffix"
+    pvals = np.array([0.01, 0.01, 0.01, 0.01, 0.20, 0.01])
+    chains = [[5, 4, 3], [2, 1, 0]]
+    mc = ct.multi_chain(pvals, 0.10, chains)
+    expected = (
+        ct.fixed_sequence_chain(pvals, 0.05, chains[0])
+        | ct.fixed_sequence_chain(pvals, 0.05, chains[1])
+    )
+    assert mc == expected, "multi-chain must equal the union of allocated fixed-sequence chains"
+    try:
+        ct.multi_chain(pvals, 0.10, chains, weights=[0.8, 0.8])
+        raise AssertionError("multi-chain accepted weights summing above one")
+    except ValueError:
+        pass
     print("[ok] test_certify_structure")
+
+
+def test_select_risk_multichain_can_use_alternate_chain():
+    """Multi-chain search can certify a cheaper policy when a separate chain survives."""
+    n, K = 100, 6
+    alpha, delta = 0.20, 0.10
+    loss = np.zeros((n, K), dtype=float)
+    loss[:25, 4] = 1.0  # blocks the default expensive->cheap chain at index 4
+    costs = np.arange(K, dtype=float)
+    chains = [[5, 4, 3], [2, 1, 0]]
+
+    one_chain = sel.select_risk(loss, costs, alpha, delta, method="chain", pvalue="hb")
+    multi = sel.select_risk(
+        loss,
+        costs,
+        alpha,
+        delta,
+        method="multichain",
+        pvalue="hb",
+        chains=chains,
+    )
+
+    assert one_chain["selected"] == 5, "single chain should stop before the cheaper safe chain"
+    assert multi["selected"] == 0, "multi-chain should pick the cheapest certified alternate-chain config"
+    assert multi["extra"]["num_chains"] == 2
+    print("[ok] test_select_risk_multichain_can_use_alternate_chain")
 
 
 def test_build_chain_matches_manual_policy():
@@ -94,6 +133,25 @@ def test_build_chain_matches_manual_policy():
     np.testing.assert_array_equal(loss, manual_loss)
     np.testing.assert_array_equal(cost, manual_cost)
     print("[ok] test_build_chain_matches_manual_policy")
+
+
+def test_threshold_family_matches_global_chain():
+    """A repeated scalar threshold vector matches the original global-threshold helper."""
+    sim = EarlyExitSim(seed=44)
+    rng = np.random.default_rng(321)
+    n = 384
+    _d, correct, conf = sim._draw_latents(n, rng, lam=0.0)
+    loss_chain, cost_chain = build_chain(conf, 1.0 - correct, sim.costs_exit, sim.thresholds)
+    threshold_vectors = np.repeat(sim.thresholds[:, None], sim.L - 1, axis=1)
+    loss_family, cost_family = build_threshold_family(
+        conf,
+        1.0 - correct,
+        sim.costs_exit,
+        threshold_vectors,
+    )
+    np.testing.assert_array_equal(loss_family, loss_chain)
+    np.testing.assert_array_equal(cost_family, cost_chain)
+    print("[ok] test_threshold_family_matches_global_chain")
 
 
 # --------------------------------------------------------------------------- #
@@ -219,7 +277,9 @@ if __name__ == "__main__":
     test_pvalue_validity()
     test_weighted_pvalue_validity()
     test_certify_structure()
+    test_select_risk_multichain_can_use_alternate_chain()
     test_build_chain_matches_manual_policy()
+    test_threshold_family_matches_global_chain()
     test_end_to_end_validity_and_naive()
     test_dual_budget()
     test_shift()
