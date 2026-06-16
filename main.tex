@@ -24,13 +24,14 @@
 \title{Compute-Adaptive Risk Control: A Finite-Sample Calibration Layer for Early-Exit and Cascade Inference}
 
 \author{\uppercase{Sooyoung Jang}\authorrefmark{1},
+\uppercase{Siyeon Park}\authorrefmark{2},
 \uppercase{Sungpil Woo}\authorrefmark{1}, and
 \uppercase{Ahyun Lee}\authorrefmark{2}}
 
 \address[1]{Department of Computer Engineering, Hanbat National University,
 Daejeon 34158, Republic of Korea (e-mail: syjang@hanbat.ac.kr; woosungpil@hanbat.ac.kr)}
 \address[2]{Department of Intelligent Media Engineering, Hanbat National University,
-Daejeon 34158, Republic of Korea (e-mail: ahyun@hanbat.ac.kr)}
+Daejeon 34158, Republic of Korea (e-mail: worksiyeon@gmail.com; ahyun@hanbat.ac.kr)}
 \tfootnote{This research was supported by the Regional Innovation System \& Education (RISE) program through the Daejeon RISE Center, funded by the Ministry of Education (MOE) and Daejeon Metropolitan City, Republic of Korea (2026-RISE-06-002).}
 
 \markboth
@@ -65,7 +66,7 @@ Figure~\ref{fig:pipeline} summarizes the deployment logic before the formal nota
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{figures/fig1_pipeline.pdf}
+\includegraphics[width=\linewidth]{figures/fig1_pipeline.png}
 \caption{\textbf{CARC calibration/deployment flow.} A fixed multi-exit model produces cached calibration scores, losses, and compute values. The user pre-commits $(\alpha,\delta)$ and a compute-ordered chain; LTT-style tests certify configurations from expensive to cheap; the deployed policy is the cheapest certified one, or the procedure reports infeasibility. The orange branch shows the naive validation-inspection baseline: it may be cheap, but it does not provide the family-wise certificate used for risk control.}
 \label{fig:pipeline}
 \end{figure}
@@ -289,7 +290,7 @@ Figure~\ref{fig:chain-band} visualizes the two-sided cost statement. The importa
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=.92\linewidth]{figures/fig2_chain_band.pdf}
+\includegraphics[width=.92\linewidth]{figures/fig2_chain_band.png}
 \caption{\textbf{Schematic of the compute-chain cost bound.} This is an illustrative monotone-risk chain, not an experimental curve. The fixed-sequence test walks from expensive to cheap. On the validity event, the selected configuration does not undercut the cheapest safe in-chain policy $k_0$. Under Assumption M, the additional compute is bounded by the span between $k_0$ and $k_1$, where $k_1$ is determined by the boundary band $(\alpha-\Delta_n,\alpha]$.}
 \label{fig:chain-band}
 \end{figure}
@@ -501,7 +502,7 @@ Figure~\ref{fig:empirical-summary} summarizes the controlled simulation, CIFAR-1
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{figures/fig3_empirical_summary.pdf}
+\includegraphics[width=\linewidth]{figures/fig3_empirical_summary.png}
 \caption{\textbf{Empirical evidence summary from the completed studies.} (A) In the controlled simulation, the certified chain stays below the nominal violation levels while naive validation inspection violates far above them. (B) In the representative E2 cell, the chain has lower certified expected cost than Holm or Bonferroni, and remains close to the invalid naive reference. (C) In the CIFAR-100 finite-pool diagnostic, bars show mean violation rates across the reported split cells for each target and method; vertical labels give mean feasibility, and exact cell values are in Tables~\ref{tab:embedded-cifar-fixed-grid}--\ref{tab:embedded-cifar-exploratory}. The $\alpha=0.30$ target is pre-defined but infeasible in full-pool risk; $\alpha\in\{0.35,0.40\}$ is exploratory. (D) Under shift, an undersized or biased weight budget can fail, while defensible $\eta$ values make the estimated-weight certificate infeasible in this synthetic sweep.}
 \label{fig:empirical-summary}
 \end{figure}
@@ -986,11 +987,16 @@ $\alpha$ & $\delta$ & $n_{cal}$ & $n_{test}$ & Method & Feas. & Viol. & CI & Ris
 \endgroup
 
 \EOD
+\twocolumn
 
 \bibliographystyle{IEEEtran}
-\bibliography{main}
+\bibliography{refs}
 
 \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{figures/Jang.jpg}}]{Sooyoung Jang} received the B.S., M.S., and Ph.D. degrees in industrial and systems engineering from KAIST, Daejeon, South Korea, in 2006, 2008, and 2014, respectively. He was a Senior Research Engineer with Samsung Electronics from 2014 to 2017. From 2017 to 2023, he was a Senior Researcher with Electronics and Telecommunications Research Institute (ETRI) in Daejeon, South Korea. Since 2023, he has been an Assistant Professor with the Department of Computer Engineering, Hanbat National University, Daejeon, South Korea. His research interests include reinforcement learning, machine learning, statistical analysis, robotics, and artificial intelligence.
+\end{IEEEbiography}
+
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{figures/Park.png}}]{Siyeon Park} received the B.S. degree in intelligent media engineering from Hanbat National University, Daejeon, South Korea, in 2026. He is currently pursuing the M.S. degree in intelligent media engineering at Hanbat National University, Daejeon, South Korea.
+From 2025 to 2026, he was a Research Intern for four months with the Hyper-Reality Metaverse Research Laboratory, Electronics and Telecommunications Research Institute (ETRI), Daejeon, South Korea. His research interests include computer vision, 3D graphics, and digital twins. 
 \end{IEEEbiography}
 
 \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{figures/Woo.jpg}}]{Sungpil Woo} received the B.S., M.S., and Ph.D. degrees in the School of Computing from Korea Advanced Institute of Science and Technology (KAIST) in 2015, 2017, and 2025, respectively. From 2017 to 2025, he was a Senior Researcher at the Electronics and Telecommunications Research Institute (ETRI), where he worked on autonomous and intelligent IoT platforms. He is currently an Assistant Professor with the Department of Computer Engineering, Hanbat National University. His research interests include biosignal analysis and multimodal learning, federated learning, and reinforcement learning for on-device artificial intelligence and the Internet of Things (IoT).
